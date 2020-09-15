@@ -41,7 +41,6 @@ async fn index(req: Request<Pool>) -> Result<String, tide::Error> {
 async fn create_poll(mut req: Request<Pool>) -> Result<tide::Body, tide::Error> {
     use crate::schema::polls::dsl::*;
     use crate::models::*;
-    use tide::Body;
     use tide::StatusCode;
 
     let poll: InsertablePoll = req.body_json().await?;
@@ -50,7 +49,7 @@ async fn create_poll(mut req: Request<Pool>) -> Result<tide::Body, tide::Error> 
         match diesel::insert_into(polls).values(&poll).get_result::<Poll>(&pgconn) {
             Ok(success) => {
                 info!("inserted: {:?}", success);
-                Ok(Body::from_json(&success)?)
+                Ok(tide::Body::from_json(&success)?)
             },
             Err(err) => {
                 error!("Failed to insert: {:?}", err);
