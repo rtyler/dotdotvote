@@ -10,9 +10,9 @@ table! {
 table! {
     polls (id) {
         id -> Int4,
-        uuid -> Varchar,
+        uuid -> Uuid,
         title -> Text,
-        created_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
     }
 }
 

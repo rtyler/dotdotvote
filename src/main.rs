@@ -7,7 +7,7 @@ use diesel::pg::PgConnection;
 use diesel::r2d2::ConnectionManager;
 use dotenv::dotenv;
 use log::*;
-use tide::{Request, Response};
+use tide::Request;
 
 use std::env;
 
@@ -27,7 +27,6 @@ fn init_db_pool() -> Pool {
 
 async fn index(req: Request<Pool>) -> Result<String, tide::Error> {
     use crate::schema::polls::dsl::*;
-    use crate::models::*;
 
     if let Ok(pgconn) = req.state().get() {
         let total: i64 = polls.count().get_result(&pgconn).expect("Failed to count polls");
@@ -39,23 +38,28 @@ async fn index(req: Request<Pool>) -> Result<String, tide::Error> {
     }
 }
 
-async fn create_poll(mut req: Request<Pool>) -> Result<String, tide::Error> {
+async fn create_poll(mut req: Request<Pool>) -> Result<tide::Body, tide::Error> {
     use crate::schema::polls::dsl::*;
     use crate::models::*;
+    use tide::Body;
+    use tide::StatusCode;
 
     let poll: InsertablePoll = req.body_json().await?;
 
     if let Ok(pgconn) = req.state().get() {
-        match diesel::insert_into(polls).values(&poll).execute(&pgconn) {
-            Ok(success) => Ok("Inserted".to_string()),
+        match diesel::insert_into(polls).values(&poll).get_result::<Poll>(&pgconn) {
+            Ok(success) => {
+                info!("inserted: {:?}", success);
+                Ok(Body::from_json(&success)?)
+            },
             Err(err) => {
                 error!("Failed to insert: {:?}", err);
-                Ok("No".to_string())
+                Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to insert!"))
             },
         }
     }
     else {
-        Ok("Failed to get connection".to_string())
+        Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to get connection!"))
     }
 }
 
