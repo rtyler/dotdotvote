@@ -1,0 +1,7 @@
+CREATE TABLE polls (
+    id SERIAL PRIMARY KEY,
+    uuid VARCHAR NOT NULL,
+    title TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+

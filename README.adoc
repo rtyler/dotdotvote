@@ -1,0 +1,7 @@
+= Dot-dot Vote!
+
+This is a simple web application for
+link:https://en.wikipedia.org/wiki/Dot-voting[Dot-voting].
+
+The goal is to create a _simple_ and anonymous dot-voting system which allows
+people to create quick polls to run with their teams.

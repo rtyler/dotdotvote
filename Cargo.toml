@@ -4,8 +4,11 @@ version = "0.1.0"
 authors = ["R. Tyler Croy <rtyler@brokenco.de>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 tide = "~0.13.0"
 async-std = { version = "~1.6.0", features = ["attributes"] }
+chrono = "0.4.15"
+diesel = { version = "~1.4.5", features = ["postgres", "r2d2"] }
+dotenv = "~0.15.0"
+pretty_env_logger = "~0.3.1"
+r2d2 = "~0.8"
