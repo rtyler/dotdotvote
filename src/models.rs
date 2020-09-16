@@ -12,6 +12,7 @@ fn generate_uuid() -> Uuid {
 }
 
 #[derive(Associations, Debug, Identifiable, Queryable, Serialize)]
+#[table_name="polls"]
 pub struct Poll {
     id: i32,
     uuid: Uuid,
@@ -27,7 +28,7 @@ pub struct InsertablePoll {
     pub uuid: Uuid,
 }
 
-#[derive(Queryable, Associations)]
+#[derive(Associations, Debug, Identifiable, Queryable, Serialize)]
 #[belongs_to(Poll)]
 pub struct Choice {
     id: i32,
@@ -36,7 +37,7 @@ pub struct Choice {
     created_at: DateTime<Utc>,
 }
 
-#[derive(Queryable)]
+#[derive(Associations, Debug, Queryable, Serialize)]
 pub struct Vote {
     id: i32,
     voter: String,

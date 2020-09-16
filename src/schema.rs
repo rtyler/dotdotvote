@@ -3,7 +3,7 @@ table! {
         id -> Int4,
         details -> Text,
         poll_id -> Int4,
-        created_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
     }
 }
 
@@ -22,7 +22,7 @@ table! {
         voter -> Text,
         choice_id -> Int4,
         poll_id -> Int4,
-        created_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
     }
 }
 

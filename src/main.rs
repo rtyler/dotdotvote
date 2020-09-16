@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use std::env;
 
+mod api_models;
 mod models;
 mod schema;
 
@@ -63,6 +64,7 @@ async fn create_poll(mut req: Request<Pool>) -> Result<tide::Body, tide::Error> 
 }
 
 async fn get_poll(req: Request<Pool>) -> Result<tide::Body, tide::Error> {
+    use crate::models::*;
     use crate::schema::polls::dsl::*;
 
     let poll_uuid = req.param("uuid");
@@ -72,16 +74,22 @@ async fn get_poll(req: Request<Pool>) -> Result<tide::Body, tide::Error> {
     }
 
     // TODO: error handling on the uuid parse
-    let foo: String = poll_uuid.unwrap();
-    let poll_uuid: Uuid = Uuid::parse_str(&foo).unwrap();
+    let poll_uuid: String = poll_uuid.unwrap();
+    let poll_uuid: Uuid = Uuid::parse_str(&poll_uuid).unwrap();
 
     if let Ok(pgconn) = req.state().get() {
-        let poll: crate::models::Poll = polls.filter(uuid.eq(poll_uuid))
+        let poll: Poll = polls.filter(uuid.eq(poll_uuid))
             .first(&pgconn)
             .expect("Failed to look up uuid");
 
+        let choices: Vec<Choice> = Choice::belonging_to(&poll).get_results(&pgconn).expect("Failed to get relations");
 
-        Ok(Body::from_json(&poll)?)
+        let response = crate::api_models::Poll {
+            poll,
+            choices,
+        };
+
+        Ok(Body::from_json(&response)?)
     }
     else {
         Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to get connection!"))
