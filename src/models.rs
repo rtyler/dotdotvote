@@ -50,5 +50,16 @@ pub struct Vote {
     voter: String,
     choice_id: i32,
     poll_id: i32,
+    dots: i32,
     created_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Deserialize, Insertable)]
+#[table_name="votes"]
+pub struct InsertableVote {
+    pub poll_id: i32,
+    pub choice_id: i32,
+    pub voter: String,
+    pub dots: i32,
+}
+

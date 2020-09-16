@@ -18,6 +18,11 @@ mod schema;
 
 type Pool = diesel::r2d2::Pool<ConnectionManager<PgConnection>>;
 
+/**
+ * Construct the PostgreSQL connection pool
+ *
+ * Note: this is used in the tide app state
+ */
 fn init_db_pool() -> Pool {
     dotenv().ok();
 
@@ -27,6 +32,9 @@ fn init_db_pool() -> Pool {
     Pool::new(manager).expect("db pool")
 }
 
+/**
+ *  GET /
+ */
 async fn index(req: Request<Pool>) -> Result<String, tide::Error> {
     use crate::schema::polls::dsl::*;
 
@@ -40,6 +48,9 @@ async fn index(req: Request<Pool>) -> Result<String, tide::Error> {
     }
 }
 
+/**
+ *  PUT /api/v1/polls
+ */
 async fn create_poll(mut req: Request<Pool>) -> Result<tide::Body, tide::Error> {
     use crate::schema::polls::dsl::*;
     use crate::schema::choices::dsl::choices;
@@ -77,14 +88,18 @@ async fn create_poll(mut req: Request<Pool>) -> Result<tide::Body, tide::Error> 
     }
 }
 
-async fn get_poll(req: Request<Pool>) -> Result<tide::Body, tide::Error> {
+/**
+ * Look up the poll based on the `uuid` parameter in the request
+ */
+fn requested_poll(req: &Request<Pool>) -> Option<crate::models::Poll> {
     use crate::models::*;
     use crate::schema::polls::dsl::*;
 
     let poll_uuid = req.param("uuid");
 
     if poll_uuid.is_err() {
-        return Err(tide::Error::from_str(StatusCode::BadRequest, "Missing uuid"));
+        warn!("No `uuid` parameter given");
+        return None;
     }
 
     // TODO: error handling on the uuid parse
@@ -92,23 +107,81 @@ async fn get_poll(req: Request<Pool>) -> Result<tide::Body, tide::Error> {
     let poll_uuid: Uuid = Uuid::parse_str(&poll_uuid).unwrap();
 
     if let Ok(pgconn) = req.state().get() {
-        let poll: Poll = polls.filter(uuid.eq(poll_uuid))
-            .first(&pgconn)
-            .expect("Failed to look up uuid");
-
-        let choices: Vec<Choice> = Choice::belonging_to(&poll).get_results(&pgconn).expect("Failed to get relations");
-
-        let response = crate::api_models::Poll {
-            poll,
-            choices,
-        };
-
-        Ok(Body::from_json(&response)?)
+        if let Ok(poll) = polls.filter(uuid.eq(poll_uuid)).first(&pgconn) {
+            return Some(poll);
+        }
     }
-    else {
-        Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to get connection!"))
-    }
+    None
 }
+
+/**
+ * GET /api/v1/polls/:uuid
+ */
+async fn get_poll(req: Request<Pool>) -> Result<tide::Body, tide::Error> {
+    use crate::models::*;
+    use crate::schema::polls::dsl::*;
+
+    // TODO: this is grabbing two connections from the pool, reorder
+    if let Ok(pgconn) = req.state().get() {
+        if let Some(poll) = requested_poll(&req) {
+            let choices: Vec<Choice> = Choice::belonging_to(&poll).get_results(&pgconn).expect("Failed to get relations");
+
+            let response = crate::api_models::Poll {
+                poll,
+                choices,
+            };
+
+            return Ok(Body::from_json(&response)?);
+        }
+    }
+    Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to look up poll!"))
+}
+
+/**
+ *  POST /api/v1/polls/:uuid/vote
+ */
+async fn vote_in_poll(mut req: Request<Pool>) -> Result<Body, tide::Error> {
+    use crate::models::*;
+    use crate::schema::votes::dsl::votes;
+
+    if let Ok(pgconn) = req.state().get() {
+        if let Some(poll) = requested_poll(&req) {
+            let ballot: crate::api_models::Ballot = req.body_json().await?;
+            info!("Ballot received: {:?}", ballot);
+            return pgconn.transaction::<_, tide::Error, _>(|| {
+                for (choice, dots) in ballot.choices.iter() {
+                    let vote = InsertableVote {
+                        poll_id: *poll.id(),
+                        choice_id: *choice,
+                        voter: ballot.voter.clone(),
+                        dots: *dots,
+                    };
+
+                    match diesel::insert_into(votes).values(&vote).execute(&pgconn) {
+                        Ok(success) => debug!("Votes recorded"),
+                        Err(err) => {
+                            error!("Failed to vote! {:?}", err);
+                            return Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to vote"));
+                        },
+                    }
+                }
+                Ok(Body::from_string("voted".to_string()))
+            });
+        }
+        else {
+            return Err(tide::Error::from_str(StatusCode::NotFound, "Failed to look up poll!"))
+        }
+    }
+    Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to cast ballot"))
+}
+
+/**
+ *  GET /api/v1/polls/:uuid/results
+ */
+async fn poll_results(req: Request<Pool>) -> Result<Body, tide::Error> {
+    Ok(Body::from_string("Not implemented".to_string()))
+}
+
 
 fn main() -> Result<(), std::io::Error> {
     pretty_env_logger::init();
@@ -118,6 +191,8 @@ fn main() -> Result<(), std::io::Error> {
         app.at("/").get(index);
         app.at("/api/v1/polls").put(create_poll);
         app.at("/api/v1/polls/:uuid").get(get_poll);
+        app.at("/api/v1/polls/:uuid/vote").post(vote_in_poll);
+        app.at("/api/v1/polls/:uuid/results").get(poll_results);
         app.listen("127.0.0.1:8000").await?;
         Ok(())
     })

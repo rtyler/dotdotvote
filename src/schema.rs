@@ -23,6 +23,7 @@ table! {
         choice_id -> Int4,
         poll_id -> Int4,
         created_at -> Timestamptz,
+        dots -> Int4,
     }
 }
 
