@@ -92,7 +92,6 @@ async fn create_poll(mut req: Request<Pool>) -> Result<tide::Body, tide::Error> 
  * Look up the poll based on the `uuid` parameter in the request
  */
 fn requested_poll(req: &Request<Pool>) -> Option<crate::models::Poll> {
-    use crate::models::*;
     use crate::schema::polls::dsl::*;
 
     let poll_uuid = req.param("uuid");
@@ -119,7 +118,6 @@ fn requested_poll(req: &Request<Pool>) -> Option<crate::models::Poll> {
  */
 async fn get_poll(req: Request<Pool>) -> Result<tide::Body, tide::Error> {
     use crate::models::*;
-    use crate::schema::polls::dsl::*;
 
     // TODO: this is grabbing two connections from the pool, reorder
     if let Ok(pgconn) = req.state().get() {
@@ -179,8 +177,31 @@ async fn vote_in_poll(mut req: Request<Pool>) -> Result<Body, tide::Error> {
  *  GET /api/v1/polls/:uuid/results
  */
 async fn poll_results(req: Request<Pool>) -> Result<Body, tide::Error> {
-    Ok(Body::from_string("Not implemented".to_string()))
+    use crate::api_models::Tally;
+    use crate::models::{Vote, Choice};
+
+    if let Ok(pgconn) = req.state().get() {
+        if let Some(poll) = requested_poll(&req) {
+            let choices: Vec<Choice> = Choice::belonging_to(&poll).get_results(&pgconn).expect("Failed to look up choices");
+            let votes: Vec<Vote> = Vote::belonging_to(&poll).get_results(&pgconn).expect("Failed to look up votes");
+
+            let tally = Tally {
+                poll,
+                choices,
+                votes,
+            };
+
+            Ok(Body::from_json(&tally)?)
+        }
+        else {
+            Err(tide::Error::from_str(StatusCode::NotFound, "Failed to find poll"))
+        }
+    }
+    else {
+        Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to look up poll"))
+    }
 }
+
 
 
 fn main() -> Result<(), std::io::Error> {

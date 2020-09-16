@@ -44,14 +44,16 @@ pub struct InsertableChoice {
     pub poll_id: i32,
 }
 
-#[derive(Associations, Debug, Queryable, Serialize)]
+#[derive(Associations, Debug, Identifiable, Queryable, Serialize)]
+#[belongs_to(Choice)]
+#[belongs_to(Poll)]
 pub struct Vote {
     id: i32,
     voter: String,
     choice_id: i32,
     poll_id: i32,
-    dots: i32,
     created_at: DateTime<Utc>,
+    pub dots: i32,
 }
 
 #[derive(Debug, Deserialize, Insertable)]

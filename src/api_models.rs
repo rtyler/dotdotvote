@@ -45,5 +45,6 @@ pub struct Ballot {
 #[derive(Debug, Serialize)]
 pub struct Tally {
     pub poll: crate::models::Poll,
-    pub choices: Vec<(crate::models::Choice, u32)>,
+    pub choices: Vec<crate::models::Choice>,
+    pub votes: Vec<crate::models::Vote>,
 }
