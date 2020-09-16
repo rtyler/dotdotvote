@@ -42,21 +42,35 @@ async fn index(req: Request<Pool>) -> Result<String, tide::Error> {
 
 async fn create_poll(mut req: Request<Pool>) -> Result<tide::Body, tide::Error> {
     use crate::schema::polls::dsl::*;
+    use crate::schema::choices::dsl::choices;
     use crate::models::*;
 
-    let poll: InsertablePoll = req.body_json().await?;
+    let poll: crate::api_models::InsertablePoll = req.body_json().await?;
+    debug!("Poll received: {:?}", poll);
 
     if let Ok(pgconn) = req.state().get() {
-        match diesel::insert_into(polls).values(&poll).get_result::<Poll>(&pgconn) {
-            Ok(success) => {
-                info!("inserted: {:?}", success);
-                Ok(Body::from_json(&success)?)
-            },
-            Err(err) => {
-                error!("Failed to insert: {:?}", err);
-                Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to insert!"))
-            },
-        }
+        pgconn.transaction::<_, tide::Error, _>(|| {
+            match diesel::insert_into(polls).values(&poll.poll).get_result::<Poll>(&pgconn) {
+                Ok(success) => {
+                    poll.choices.iter().map(|details| {
+                        let choice = InsertableChoice {
+                            poll_id: *success.id(),
+                            details: details.to_string(),
+                        };
+                        // TODO: Handle error
+                        let result = diesel::insert_into(choices).values(&choice).execute(&pgconn);
+                        debug!("choices insert: {:?}", result);
+                    }).collect::<()>();
+                    // Once the poll has been creatd, insert the choices
+                    debug!("inserted: {:?}", success);
+                    Ok(Body::from_json(&success).expect("Failed to serialize"))
+                },
+                Err(err) => {
+                    error!("Failed to insert: {:?}", err);
+                    Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to insert!"))
+                },
+            }
+        })
     }
     else {
         Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to get connection!"))

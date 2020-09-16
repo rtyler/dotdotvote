@@ -37,6 +37,13 @@ pub struct Choice {
     created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Deserialize, Insertable)]
+#[table_name="choices"]
+pub struct InsertableChoice {
+    pub details: String,
+    pub poll_id: i32,
+}
+
 #[derive(Associations, Debug, Queryable, Serialize)]
 pub struct Vote {
     id: i32,
