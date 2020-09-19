@@ -38,14 +38,16 @@ fn init_db_pool() -> Pool {
 async fn index(req: Request<Pool>) -> Result<String, tide::Error> {
     use crate::schema::polls::dsl::*;
 
-    if let Ok(pgconn) = req.state().get() {
-        let total: i64 = polls.count().get_result(&pgconn).expect("Failed to count polls");
+    task::spawn_blocking(move || {
+        if let Ok(pgconn) = req.state().get() {
+            let total: i64 = polls.count().get_result(&pgconn).expect("Failed to count polls");
 
-        Ok(format!("Found {:?} total polls in system", total))
-    }
-    else {
-        Ok("Failed to get connection".to_string())
-    }
+            Ok(format!("Found {:?} total polls in system", total))
+        }
+        else {
+            Ok("Failed to get connection".to_string())
+        }
+    }).await
 }
 
 /**
@@ -59,33 +61,35 @@ async fn create_poll(mut req: Request<Pool>) -> Result<tide::Body, tide::Error> 
     let poll: crate::api_models::InsertablePoll = req.body_json().await?;
     debug!("Poll received: {:?}", poll);
 
-    if let Ok(pgconn) = req.state().get() {
-        pgconn.transaction::<_, tide::Error, _>(|| {
-            match diesel::insert_into(polls).values(&poll.poll).get_result::<Poll>(&pgconn) {
-                Ok(success) => {
-                    poll.choices.iter().map(|details| {
-                        let choice = InsertableChoice {
-                            poll_id: *success.id(),
-                            details: details.to_string(),
-                        };
-                        // TODO: Handle error
-                        let result = diesel::insert_into(choices).values(&choice).execute(&pgconn);
-                        debug!("choices insert: {:?}", result);
-                    }).collect::<()>();
-                    // Once the poll has been creatd, insert the choices
-                    debug!("inserted: {:?}", success);
-                    Ok(Body::from_json(&success).expect("Failed to serialize"))
-                },
-                Err(err) => {
-                    error!("Failed to insert: {:?}", err);
-                    Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to insert!"))
-                },
-            }
-        })
-    }
-    else {
-        Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to get connection!"))
-    }
+    task::spawn_blocking(move || {
+        if let Ok(pgconn) = req.state().get() {
+            pgconn.transaction::<_, tide::Error, _>(|| {
+                match diesel::insert_into(polls).values(&poll.poll).get_result::<Poll>(&pgconn) {
+                    Ok(success) => {
+                        poll.choices.iter().map(|details| {
+                            let choice = InsertableChoice {
+                                poll_id: *success.id(),
+                                details: details.to_string(),
+                            };
+                            // TODO: Handle error
+                            let result = diesel::insert_into(choices).values(&choice).execute(&pgconn);
+                            debug!("choices insert: {:?}", result);
+                        }).collect::<()>();
+                        // Once the poll has been creatd, insert the choices
+                        debug!("inserted: {:?}", success);
+                        Ok(Body::from_json(&success).expect("Failed to serialize"))
+                    },
+                    Err(err) => {
+                        error!("Failed to insert: {:?}", err);
+                        Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to insert!"))
+                    },
+                }
+            })
+        }
+        else {
+            Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to get connection!"))
+        }
+    }).await
 }
 
 /**
@@ -119,20 +123,22 @@ fn requested_poll(req: &Request<Pool>) -> Option<crate::models::Poll> {
 async fn get_poll(req: Request<Pool>) -> Result<tide::Body, tide::Error> {
     use crate::models::*;
 
-    // TODO: this is grabbing two connections from the pool, reorder
-    if let Ok(pgconn) = req.state().get() {
-        if let Some(poll) = requested_poll(&req) {
-            let choices: Vec<Choice> = Choice::belonging_to(&poll).get_results(&pgconn).expect("Failed to get relations");
+    task::spawn_blocking(move || {
+        // TODO: this is grabbing two connections from the pool, reorder
+        if let Ok(pgconn) = req.state().get() {
+            if let Some(poll) = requested_poll(&req) {
+                let choices: Vec<Choice> = Choice::belonging_to(&poll).get_results(&pgconn).expect("Failed to get relations");
 
-            let response = crate::api_models::Poll {
-                poll,
-                choices,
-            };
+                let response = crate::api_models::Poll {
+                    poll,
+                    choices,
+                };
 
-            return Ok(Body::from_json(&response)?);
+                return Ok(Body::from_json(&response)?);
+            }
         }
-    }
-    Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to look up poll!"))
+        Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to look up poll!"))
+    }).await
 }
 
 /**
@@ -142,35 +148,38 @@ async fn vote_in_poll(mut req: Request<Pool>) -> Result<Body, tide::Error> {
     use crate::models::*;
     use crate::schema::votes::dsl::votes;
 
-    if let Ok(pgconn) = req.state().get() {
-        if let Some(poll) = requested_poll(&req) {
-            let ballot: crate::api_models::Ballot = req.body_json().await?;
-            info!("Ballot received: {:?}", ballot);
-            return pgconn.transaction::<_, tide::Error, _>(|| {
-                for (choice, dots) in ballot.choices.iter() {
-                    let vote = InsertableVote {
-                        poll_id: *poll.id(),
-                        choice_id: *choice,
-                        voter: ballot.voter.clone(),
-                        dots: *dots,
-                    };
+    let ballot: crate::api_models::Ballot = req.body_json().await?;
 
-                    match diesel::insert_into(votes).values(&vote).execute(&pgconn) {
-                        Ok(success) => debug!("Votes recorded"),
-                        Err(err) => {
-                            error!("Failed to vote! {:?}", err);
-                            return Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to vote"));
-                        },
+    task::spawn_blocking(move || {
+        if let Ok(pgconn) = req.state().get() {
+            if let Some(poll) = requested_poll(&req) {
+                info!("Ballot received: {:?}", ballot);
+                return pgconn.transaction::<_, tide::Error, _>(|| {
+                    for (choice, dots) in ballot.choices.iter() {
+                        let vote = InsertableVote {
+                            poll_id: *poll.id(),
+                            choice_id: *choice,
+                            voter: ballot.voter.clone(),
+                            dots: *dots,
+                        };
+
+                        match diesel::insert_into(votes).values(&vote).execute(&pgconn) {
+                            Ok(success) => debug!("Votes recorded"),
+                            Err(err) => {
+                                error!("Failed to vote! {:?}", err);
+                                return Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to vote"));
+                            },
+                        }
                     }
-                }
-                Ok(Body::from_string("voted".to_string()))
-            });
+                    Ok(Body::from_string("voted".to_string()))
+                });
+            }
+            else {
+                return Err(tide::Error::from_str(StatusCode::NotFound, "Failed to look up poll!"))
+            }
         }
-        else {
-            return Err(tide::Error::from_str(StatusCode::NotFound, "Failed to look up poll!"))
-        }
-    }
-    Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to cast ballot"))
+        Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to cast ballot"))
+    }).await
 }
 
 /**
@@ -180,26 +189,28 @@ async fn poll_results(req: Request<Pool>) -> Result<Body, tide::Error> {
     use crate::api_models::Tally;
     use crate::models::{Vote, Choice};
 
-    if let Ok(pgconn) = req.state().get() {
-        if let Some(poll) = requested_poll(&req) {
-            let choices: Vec<Choice> = Choice::belonging_to(&poll).get_results(&pgconn).expect("Failed to look up choices");
-            let votes: Vec<Vote> = Vote::belonging_to(&poll).get_results(&pgconn).expect("Failed to look up votes");
+    task::spawn_blocking(move || {
+        if let Ok(pgconn) = req.state().get() {
+            if let Some(poll) = requested_poll(&req) {
+                let choices: Vec<Choice> = Choice::belonging_to(&poll).get_results(&pgconn).expect("Failed to look up choices");
+                let votes: Vec<Vote> = Vote::belonging_to(&poll).get_results(&pgconn).expect("Failed to look up votes");
 
-            let tally = Tally {
-                poll,
-                choices,
-                votes,
-            };
+                let tally = Tally {
+                    poll,
+                    choices,
+                    votes,
+                };
 
-            Ok(Body::from_json(&tally)?)
+                Ok(Body::from_json(&tally)?)
+            }
+            else {
+                Err(tide::Error::from_str(StatusCode::NotFound, "Failed to find poll"))
+            }
         }
         else {
-            Err(tide::Error::from_str(StatusCode::NotFound, "Failed to find poll"))
+            Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to look up poll"))
         }
-    }
-    else {
-        Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to look up poll"))
-    }
+    }).await
 }
 
 
