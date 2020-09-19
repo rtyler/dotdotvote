@@ -5,3 +5,4 @@ CREATE TABLE polls (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE UNIQUE INDEX uuid_idx ON polls(uuid);

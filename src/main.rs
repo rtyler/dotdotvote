@@ -7,6 +7,7 @@ use diesel::pg::PgConnection;
 use diesel::r2d2::ConnectionManager;
 use dotenv::dotenv;
 use log::*;
+use sqlx::postgres::PgPool;
 use tide::{Body, Request, StatusCode};
 use uuid::Uuid;
 
@@ -32,23 +33,141 @@ fn init_db_pool() -> Pool {
     Pool::new(manager).expect("db pool")
 }
 
+
 /**
- *  GET /
+ * Struct for carrying application state into tide request handlers
  */
-async fn index(req: Request<Pool>) -> Result<String, tide::Error> {
-    use crate::schema::polls::dsl::*;
-
-    task::spawn_blocking(move || {
-        if let Ok(pgconn) = req.state().get() {
-            let total: i64 = polls.count().get_result(&pgconn).expect("Failed to count polls");
-
-            Ok(format!("Found {:?} total polls in system", total))
-        }
-        else {
-            Ok("Failed to get connection".to_string())
-        }
-    }).await
+#[derive(Clone, Debug)]
+pub struct AppState {
+    pub db: sqlx::Pool<sqlx::PgConnection>,
 }
+
+/**
+ * Create the sqlx connection pool for postgresql
+ */
+async fn create_pool() -> Result<sqlx::Pool<sqlx::PgConnection>, sqlx::Error> {
+    dotenv().ok();
+
+    let database_url = env::var("DATABASE_URL")
+        .expect("DATABASE_URL must be set");
+
+    PgPool::builder()
+        .max_size(5)
+        .build(&database_url).await
+}
+
+mod dao {
+    use chrono::{DateTime, Utc};
+    use serde::Serialize;
+    use uuid::Uuid;
+
+    #[derive(Clone, Debug, Serialize)]
+    pub struct Poll {
+        pub id: i32,
+        pub uuid: Uuid,
+        pub title: String,
+        pub created_at: DateTime<Utc>,
+    }
+
+    #[derive(Clone, Debug, Serialize)]
+    pub struct Choice{
+        pub id: i32,
+        pub poll_id: i32,
+        pub details: String,
+        pub created_at: DateTime<Utc>,
+    }
+}
+
+mod json {
+    use serde::Serialize;
+
+    #[derive(Serialize)]
+    pub struct PollResponse {
+        pub poll: crate::dao::Poll,
+        pub choices: Vec<crate::dao::Choice>,
+    }
+}
+
+mod routes {
+    use tide::{Body, Request, StatusCode};
+
+    use crate::AppState;
+
+    /**
+    *  GET /
+    */
+    pub async fn index(req: Request<AppState>) -> Result<String, tide::Error> {
+        Ok("Wilkommen".to_string())
+    }
+
+    pub mod polls {
+        use tide::{Body, Request, StatusCode};
+        use log::*;
+        use sqlx::prelude::*;
+        use uuid::Uuid;
+
+        use crate::AppState;
+        /**
+        *  PUT /api/v1/polls
+        */
+        pub async fn create(mut req: Request<AppState>) -> Result<Body, tide::Error> {
+            Ok(Body::from_string("Hello".to_string()))
+        }
+
+        /**
+        * GET /api/v1/polls/:uuid
+        */
+        pub async fn get(req: Request<AppState>) -> Result<Body, tide::Error> {
+            let uuid = req.param::<String>("uuid");
+
+            if uuid.is_err() {
+                return Err(tide::Error::from_str(StatusCode::BadRequest, "No uuid specified"));
+            }
+
+            debug!("Fetching poll: {:?}", uuid);
+
+            match Uuid::parse_str(&uuid.unwrap()) {
+                Err(err) => {
+                    Err(tide::Error::from_str(StatusCode::BadRequest, "Invalid uuid specified"))
+                },
+                Ok(uuid) => {
+                    let mut tx = req.state().db.begin().await?;
+                    let poll = sqlx::query_as!(crate::dao::Poll, "SELECT * FROM polls WHERE uuid = $1", uuid)
+                        .fetch_one(&mut tx)
+                        .await;
+
+                    if let Ok(poll) = poll {
+                        info!("Found poll: {:?}", poll);
+                        let mut choices = sqlx::query_as!(crate::dao::Choice,
+                            "SELECT * FROM choices WHERE poll_id = $1 ORDER by ID ASC", poll.id)
+                            .fetch_all(&mut tx)
+                            .await?;
+
+                        let response = crate::json::PollResponse { poll, choices };
+                        Body::from_json(&response)
+                    }
+                    else {
+                        Err(tide::Error::from_str(StatusCode::NotFound, "Could not find uuid"))
+                    }
+                },
+            }
+        }
+
+        /**
+        *  POST /api/v1/polls/:uuid/vote
+        */
+        pub async fn vote(mut req: Request<AppState>) -> Result<Body, tide::Error> {
+            Ok(Body::from_string("Hello".to_string()))
+        }
+        /**
+        *  GET /api/v1/polls/:uuid/results
+        */
+        pub async fn results(req: Request<AppState>) -> Result<Body, tide::Error> {
+            Ok(Body::from_string("Hello".to_string()))
+        }
+    }
+}
+
 
 /**
  *  PUT /api/v1/polls
@@ -215,17 +334,25 @@ async fn poll_results(req: Request<Pool>) -> Result<Body, tide::Error> {
 
 
 
-fn main() -> Result<(), std::io::Error> {
+#[async_std::main]
+async fn main() -> Result<(), std::io::Error> {
     pretty_env_logger::init();
 
-    task::block_on(async {
-        let mut app = tide::with_state(init_db_pool());
-        app.at("/").get(index);
-        app.at("/api/v1/polls").put(create_poll);
-        app.at("/api/v1/polls/:uuid").get(get_poll);
-        app.at("/api/v1/polls/:uuid/vote").post(vote_in_poll);
-        app.at("/api/v1/polls/:uuid/results").get(poll_results);
-        app.listen("127.0.0.1:8000").await?;
-        Ok(())
-    })
+    match create_pool().await {
+        Ok(db) => {
+            let state = AppState { db };
+            let mut app = tide::with_state(state);
+            app.at("/").get(routes::index);
+            app.at("/api/v1/polls").put(routes::polls::create);
+            app.at("/api/v1/polls/:uuid").get(routes::polls::get);
+            app.at("/api/v1/polls/:uuid/vote").post(routes::polls::vote);
+            app.at("/api/v1/polls/:uuid/results").get(routes::polls::results);
+            app.listen("127.0.0.1:8000").await?;
+            Ok(())
+        },
+        Err(err) => {
+            error!("Could not initialize pool! {:?}", err);
+            Err(std::io::Error::new(std::io::ErrorKind::Other, err))
+        },
+    }
 }
