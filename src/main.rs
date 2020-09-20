@@ -2,7 +2,6 @@ use dotenv::dotenv;
 use log::*;
 use sqlx::postgres::PgPool;
 
-
 type DbPool = sqlx::Pool<sqlx::PgConnection>;
 
 /**
@@ -19,12 +18,9 @@ pub struct AppState {
 async fn create_pool() -> Result<sqlx::Pool<sqlx::PgConnection>, sqlx::Error> {
     dotenv().ok();
 
-    let database_url = std::env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set");
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
-    PgPool::builder()
-        .max_size(5)
-        .build(&database_url).await
+    PgPool::builder().max_size(5).build(&database_url).await
 }
 
 mod dao {
@@ -120,99 +116,123 @@ mod routes {
     use crate::AppState;
 
     /**
-    *  GET /
-    */
+     *  GET /
+     */
     pub async fn index(_req: Request<AppState>) -> Result<String, tide::Error> {
         Ok("Wilkommen".to_string())
     }
 
     pub mod polls {
-        use tide::{Body, Request, Response, StatusCode};
         use log::*;
+        use tide::{Body, Request, Response, StatusCode};
         use uuid::Uuid;
 
         use crate::AppState;
         /**
-        *  PUT /api/v1/polls
-        */
+         *  PUT /api/v1/polls
+         */
         pub async fn create(mut req: Request<AppState>) -> Result<Response, tide::Error> {
             let poll = req.body_json::<crate::json::PollCreateRequest>().await?;
             let mut tx = req.state().db.begin().await?;
-            if let Ok(res) = sqlx::query!("INSERT INTO polls (title, uuid) VALUES ($1, $2) RETURNING id, uuid", poll.title, Uuid::new_v4())
-                .fetch_one(&mut tx)
-                .await {
-
-                    let mut commit = true;
-                    /*
-                     * There doesn't seem to be a cleaner way to do a multiple insert with sqlx
-                     * that doesn't involve some string manipulation
-                     */
-                    for choice in poll.choices.iter() {
-                        let cin = sqlx::query!("INSERT INTO choices (poll_id, details) VALUES ($1, $2)", res.id, choice).execute(&mut tx).await;
-                        if cin.is_err() {
-                            commit = false;
-                            break;
-                        }
+            if let Ok(res) = sqlx::query!(
+                "INSERT INTO polls (title, uuid) VALUES ($1, $2) RETURNING id, uuid",
+                poll.title,
+                Uuid::new_v4()
+            )
+            .fetch_one(&mut tx)
+            .await
+            {
+                let mut commit = true;
+                /*
+                 * There doesn't seem to be a cleaner way to do a multiple insert with sqlx
+                 * that doesn't involve some string manipulation
+                 */
+                for choice in poll.choices.iter() {
+                    let cin = sqlx::query!(
+                        "INSERT INTO choices (poll_id, details) VALUES ($1, $2)",
+                        res.id,
+                        choice
+                    )
+                    .execute(&mut tx)
+                    .await;
+                    if cin.is_err() {
+                        commit = false;
+                        break;
                     }
+                }
 
-                    if commit {
-                        tx.commit().await?;
-                    }
+                if commit {
+                    tx.commit().await?;
+                }
 
-                    let response = Response::builder(StatusCode::Created)
-                        .body(Body::from_string(format!(r#"{{"poll":"{}"}}"#, res.uuid)))
-                        .build();
-                    Ok(response)
-            }
-            else {
-                Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to create"))
+                let response = Response::builder(StatusCode::Created)
+                    .body(Body::from_string(format!(r#"{{"poll":"{}"}}"#, res.uuid)))
+                    .build();
+                Ok(response)
+            } else {
+                Err(tide::Error::from_str(
+                    StatusCode::InternalServerError,
+                    "Failed to create",
+                ))
             }
         }
 
         /**
-        * GET /api/v1/polls/:uuid
-        */
+         * GET /api/v1/polls/:uuid
+         */
         pub async fn get(req: Request<AppState>) -> Result<Body, tide::Error> {
             let uuid = req.param::<String>("uuid");
 
             if uuid.is_err() {
-                return Err(tide::Error::from_str(StatusCode::BadRequest, "No uuid specified"));
+                return Err(tide::Error::from_str(
+                    StatusCode::BadRequest,
+                    "No uuid specified",
+                ));
             }
 
             debug!("Fetching poll: {:?}", uuid);
 
             match Uuid::parse_str(&uuid.unwrap()) {
-                Err(_) => {
-                    Err(tide::Error::from_str(StatusCode::BadRequest, "Invalid uuid specified"))
-                },
+                Err(_) => Err(tide::Error::from_str(
+                    StatusCode::BadRequest,
+                    "Invalid uuid specified",
+                )),
                 Ok(uuid) => {
                     let db = &req.state().db;
 
                     if let Ok(poll) = crate::dao::Poll::from_uuid(uuid, db).await {
                         info!("Found poll: {:?}", poll);
-                        let choices = sqlx::query_as!(crate::dao::Choice,
-                            "SELECT * FROM choices WHERE poll_id = $1 ORDER by ID ASC", poll.id)
-                            .fetch_all(db)
-                            .await?;
+                        let choices = sqlx::query_as!(
+                            crate::dao::Choice,
+                            "SELECT * FROM choices WHERE poll_id = $1 ORDER by ID ASC",
+                            poll.id
+                        )
+                        .fetch_all(db)
+                        .await?;
 
                         let response = crate::json::PollResponse { poll, choices };
                         Body::from_json(&response)
+                    } else {
+                        Err(tide::Error::from_str(
+                            StatusCode::NotFound,
+                            "Could not find uuid",
+                        ))
                     }
-                    else {
-                        Err(tide::Error::from_str(StatusCode::NotFound, "Could not find uuid"))
-                    }
-                },
+                }
             }
         }
 
         /**
-        *  POST /api/v1/polls/:uuid/vote
-        */
+         *  POST /api/v1/polls/:uuid/vote
+         */
         pub async fn vote(mut req: Request<AppState>) -> Result<Body, tide::Error> {
             let uuid = req.param::<String>("uuid");
 
             if uuid.is_err() {
-                return Err(tide::Error::from_str(StatusCode::BadRequest, "No uuid specified"));
+                return Err(tide::Error::from_str(
+                    StatusCode::BadRequest,
+                    "No uuid specified",
+                ));
             }
 
             let vote: crate::json::Vote = req.body_json().await?;
@@ -220,9 +240,10 @@ mod routes {
             debug!("Fetching poll: {:?}", uuid);
 
             match Uuid::parse_str(&uuid.unwrap()) {
-                Err(_) => {
-                    Err(tide::Error::from_str(StatusCode::BadRequest, "Invalid uuid specified"))
-                },
+                Err(_) => Err(tide::Error::from_str(
+                    StatusCode::BadRequest,
+                    "Invalid uuid specified",
+                )),
                 Ok(uuid) => {
                     let db = &req.state().db;
 
@@ -232,55 +253,81 @@ mod routes {
                         let mut tx = db.begin().await?;
 
                         for (choice, dots) in vote.choices.iter() {
-                            sqlx::query!("
+                            sqlx::query!(
+                                "
                                 INSERT INTO votes (voter, choice_id, poll_id, dots)
                                     VALUES ($1, $2, $3, $4)
-                            ", vote.voter, *choice, poll.id, *dots)
-                                .execute(&mut tx)
-                                .await?;
+                            ",
+                                vote.voter,
+                                *choice,
+                                poll.id,
+                                *dots
+                            )
+                            .execute(&mut tx)
+                            .await?;
                         }
 
                         tx.commit().await?;
                         Ok(Body::from_string("success".to_string()))
-                    }
-                    else {
-                        Err(tide::Error::from_str(StatusCode::NotFound, "Could not find uuid"))
+                    } else {
+                        Err(tide::Error::from_str(
+                            StatusCode::NotFound,
+                            "Could not find uuid",
+                        ))
                     }
                 }
             }
         }
         /**
-        *  GET /api/v1/polls/:uuid/results
-        */
+         *  GET /api/v1/polls/:uuid/results
+         */
         pub async fn results(req: Request<AppState>) -> Result<Body, tide::Error> {
             let uuid = req.param::<String>("uuid");
 
             if uuid.is_err() {
-                return Err(tide::Error::from_str(StatusCode::BadRequest, "No uuid specified"));
+                return Err(tide::Error::from_str(
+                    StatusCode::BadRequest,
+                    "No uuid specified",
+                ));
             }
 
             debug!("Fetching poll: {:?}", uuid);
 
             match Uuid::parse_str(&uuid.unwrap()) {
-                Err(_) => {
-                    Err(tide::Error::from_str(StatusCode::BadRequest, "Invalid uuid specified"))
-                },
+                Err(_) => Err(tide::Error::from_str(
+                    StatusCode::BadRequest,
+                    "Invalid uuid specified",
+                )),
                 Ok(uuid) => {
                     let db = &req.state().db;
 
                     if let Ok(poll) = crate::dao::Poll::from_uuid(uuid, db).await {
-                        let choices = sqlx::query_as!(crate::dao::Choice, "SELECT * FROM choices WHERE poll_id = $1", poll.id)
-                            .fetch_all(db)
-                            .await?;
-                        let votes = sqlx::query_as!(crate::dao::Vote, "SELECT * FROM votes WHERE poll_id = $1", poll.id)
-                            .fetch_all(db)
-                            .await?;
+                        let choices = sqlx::query_as!(
+                            crate::dao::Choice,
+                            "SELECT * FROM choices WHERE poll_id = $1",
+                            poll.id
+                        )
+                        .fetch_all(db)
+                        .await?;
+                        let votes = sqlx::query_as!(
+                            crate::dao::Vote,
+                            "SELECT * FROM votes WHERE poll_id = $1",
+                            poll.id
+                        )
+                        .fetch_all(db)
+                        .await?;
 
-                        let results = crate::json::PollResults { poll, choices, votes };
+                        let results = crate::json::PollResults {
+                            poll,
+                            choices,
+                            votes,
+                        };
                         Ok(Body::from_json(&results)?)
-                    }
-                    else {
-                        Err(tide::Error::from_str(StatusCode::NotFound, "Could not find uuid"))
+                    } else {
+                        Err(tide::Error::from_str(
+                            StatusCode::NotFound,
+                            "Could not find uuid",
+                        ))
                     }
                 }
             }
@@ -300,13 +347,14 @@ async fn main() -> Result<(), std::io::Error> {
             app.at("/api/v1/polls").put(routes::polls::create);
             app.at("/api/v1/polls/:uuid").get(routes::polls::get);
             app.at("/api/v1/polls/:uuid/vote").post(routes::polls::vote);
-            app.at("/api/v1/polls/:uuid/results").get(routes::polls::results);
+            app.at("/api/v1/polls/:uuid/results")
+                .get(routes::polls::results);
             app.listen("127.0.0.1:8000").await?;
             Ok(())
-        },
+        }
         Err(err) => {
             error!("Could not initialize pool! {:?}", err);
             Err(std::io::Error::new(std::io::ErrorKind::Other, err))
-        },
+        }
     }
 }
