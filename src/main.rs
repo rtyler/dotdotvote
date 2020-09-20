@@ -41,10 +41,20 @@ mod dao {
     }
 
     #[derive(Clone, Debug, Serialize)]
-    pub struct Choice{
+    pub struct Choice {
         pub id: i32,
         pub poll_id: i32,
         pub details: String,
+        pub created_at: DateTime<Utc>,
+    }
+
+    #[derive(Clone, Debug, Serialize)]
+    pub struct Vote {
+        pub id: i32,
+        pub poll_id: i32,
+        pub choice_id: i32,
+        pub voter: String,
+        pub dots: i32,
         pub created_at: DateTime<Utc>,
     }
 
@@ -88,6 +98,13 @@ mod json {
          * Map of choice IDs and the dots per
          */
         pub choices: HashMap<i32, i32>,
+    }
+
+    #[derive(Serialize)]
+    pub struct PollResults {
+        pub poll: crate::dao::Poll,
+        pub choices: Vec<crate::dao::Choice>,
+        pub votes: Vec<crate::dao::Vote>,
     }
 }
 
@@ -236,81 +253,40 @@ mod routes {
         *  GET /api/v1/polls/:uuid/results
         */
         pub async fn results(req: Request<AppState>) -> Result<Body, tide::Error> {
-            Ok(Body::from_string("Hello".to_string()))
+            let uuid = req.param::<String>("uuid");
+
+            if uuid.is_err() {
+                return Err(tide::Error::from_str(StatusCode::BadRequest, "No uuid specified"));
+            }
+
+            debug!("Fetching poll: {:?}", uuid);
+
+            match Uuid::parse_str(&uuid.unwrap()) {
+                Err(_) => {
+                    Err(tide::Error::from_str(StatusCode::BadRequest, "Invalid uuid specified"))
+                },
+                Ok(uuid) => {
+                    let db = &req.state().db;
+
+                    if let Ok(poll) = crate::dao::Poll::from_uuid(uuid, db).await {
+                        let choices = sqlx::query_as!(crate::dao::Choice, "SELECT * FROM choices WHERE poll_id = $1", poll.id)
+                            .fetch_all(db)
+                            .await?;
+                        let votes = sqlx::query_as!(crate::dao::Vote, "SELECT * FROM votes WHERE poll_id = $1", poll.id)
+                            .fetch_all(db)
+                            .await?;
+
+                        let results = crate::json::PollResults { poll, choices, votes };
+                        Ok(Body::from_json(&results)?)
+                    }
+                    else {
+                        Err(tide::Error::from_str(StatusCode::NotFound, "Could not find uuid"))
+                    }
+                }
+            }
         }
     }
 }
-
-/**
- *  POST /api/v1/polls/:uuid/vote
-async fn vote_in_poll(mut req: Request<Pool>) -> Result<Body, tide::Error> {
-    use crate::models::*;
-    use crate::schema::votes::dsl::votes;
-
-    let ballot: crate::api_models::Ballot = req.body_json().await?;
-
-    task::spawn_blocking(move || {
-        if let Ok(pgconn) = req.state().get() {
-            if let Some(poll) = requested_poll(&req) {
-                info!("Ballot received: {:?}", ballot);
-                return pgconn.transaction::<_, tide::Error, _>(|| {
-                    for (choice, dots) in ballot.choices.iter() {
-                        let vote = InsertableVote {
-                            poll_id: *poll.id(),
-                            choice_id: *choice,
-                            voter: ballot.voter.clone(),
-                            dots: *dots,
-                        };
-
-                        match diesel::insert_into(votes).values(&vote).execute(&pgconn) {
-                            Ok(success) => debug!("Votes recorded"),
-                            Err(err) => {
-                                error!("Failed to vote! {:?}", err);
-                                return Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to vote"));
-                            },
-                        }
-                    }
-                    Ok(Body::from_string("voted".to_string()))
-                });
-            }
-            else {
-                return Err(tide::Error::from_str(StatusCode::NotFound, "Failed to look up poll!"))
-            }
-        }
-        Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to cast ballot"))
-    }).await
-}
-
-async fn poll_results(req: Request<Pool>) -> Result<Body, tide::Error> {
-    use crate::api_models::Tally;
-    use crate::models::{Vote, Choice};
-
-    task::spawn_blocking(move || {
-        if let Ok(pgconn) = req.state().get() {
-            if let Some(poll) = requested_poll(&req) {
-                let choices: Vec<Choice> = Choice::belonging_to(&poll).get_results(&pgconn).expect("Failed to look up choices");
-                let votes: Vec<Vote> = Vote::belonging_to(&poll).get_results(&pgconn).expect("Failed to look up votes");
-
-                let tally = Tally {
-                    poll,
-                    choices,
-                    votes,
-                };
-
-                Ok(Body::from_json(&tally)?)
-            }
-            else {
-                Err(tide::Error::from_str(StatusCode::NotFound, "Failed to find poll"))
-            }
-        }
-        else {
-            Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to look up poll"))
-        }
-    }).await
-}
-
-*/
-
 
 #[async_std::main]
 async fn main() -> Result<(), std::io::Error> {
