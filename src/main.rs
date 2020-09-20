@@ -1,45 +1,16 @@
-#[macro_use]
-extern crate diesel;
-
-use async_std::task;
-use diesel::prelude::*;
-use diesel::pg::PgConnection;
-use diesel::r2d2::ConnectionManager;
 use dotenv::dotenv;
 use log::*;
 use sqlx::postgres::PgPool;
-use tide::{Body, Request, StatusCode};
-use uuid::Uuid;
 
-use std::env;
 
-mod api_models;
-mod models;
-mod schema;
-
-type Pool = diesel::r2d2::Pool<ConnectionManager<PgConnection>>;
-
-/**
- * Construct the PostgreSQL connection pool
- *
- * Note: this is used in the tide app state
- */
-fn init_db_pool() -> Pool {
-    dotenv().ok();
-
-    let database_url = env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set");
-    let manager = ConnectionManager::<PgConnection>::new(database_url);
-    Pool::new(manager).expect("db pool")
-}
-
+type DbPool = sqlx::Pool<sqlx::PgConnection>;
 
 /**
  * Struct for carrying application state into tide request handlers
  */
 #[derive(Clone, Debug)]
 pub struct AppState {
-    pub db: sqlx::Pool<sqlx::PgConnection>,
+    pub db: DbPool,
 }
 
 /**
@@ -48,7 +19,7 @@ pub struct AppState {
 async fn create_pool() -> Result<sqlx::Pool<sqlx::PgConnection>, sqlx::Error> {
     dotenv().ok();
 
-    let database_url = env::var("DATABASE_URL")
+    let database_url = std::env::var("DATABASE_URL")
         .expect("DATABASE_URL must be set");
 
     PgPool::builder()
@@ -76,6 +47,14 @@ mod dao {
         pub details: String,
         pub created_at: DateTime<Utc>,
     }
+
+    impl Poll {
+        pub async fn from_uuid(uuid: uuid::Uuid, db: &crate::DbPool) -> Result<Poll, sqlx::Error> {
+            sqlx::query_as!(Poll, "SELECT * FROM polls WHERE uuid = $1", uuid)
+                .fetch_one(db)
+                .await
+        }
+    }
 }
 
 /**
@@ -85,6 +64,7 @@ mod dao {
  */
 mod json {
     use serde::{Deserialize, Serialize};
+    use std::collections::HashMap;
 
     #[derive(Serialize)]
     pub struct PollResponse {
@@ -97,6 +77,18 @@ mod json {
         pub title: String,
         pub choices: Vec<String>,
     }
+
+    #[derive(Deserialize)]
+    pub struct Vote {
+        /**
+         * Readable name of the voter
+         */
+        pub voter: String,
+        /**
+         * Map of choice IDs and the dots per
+         */
+        pub choices: HashMap<i32, i32>,
+    }
 }
 
 /**
@@ -106,21 +98,20 @@ mod json {
  * Modules are nested for cleaner organization here
  */
 mod routes {
-    use tide::{Body, Request, StatusCode};
+    use tide::Request;
 
     use crate::AppState;
 
     /**
     *  GET /
     */
-    pub async fn index(req: Request<AppState>) -> Result<String, tide::Error> {
+    pub async fn index(_req: Request<AppState>) -> Result<String, tide::Error> {
         Ok("Wilkommen".to_string())
     }
 
     pub mod polls {
         use tide::{Body, Request, Response, StatusCode};
         use log::*;
-        use sqlx::prelude::*;
         use uuid::Uuid;
 
         use crate::AppState;
@@ -130,7 +121,7 @@ mod routes {
         pub async fn create(mut req: Request<AppState>) -> Result<Response, tide::Error> {
             let poll = req.body_json::<crate::json::PollCreateRequest>().await?;
             let mut tx = req.state().db.begin().await?;
-            if let Ok(res) = sqlx::query!("INSERT INTO polls (title, uuid) VALUES ($1, $2) RETURNING id", poll.title, Uuid::new_v4())
+            if let Ok(res) = sqlx::query!("INSERT INTO polls (title, uuid) VALUES ($1, $2) RETURNING id, uuid", poll.title, Uuid::new_v4())
                 .fetch_one(&mut tx)
                 .await {
 
@@ -152,7 +143,7 @@ mod routes {
                     }
 
                     let response = Response::builder(StatusCode::Created)
-                        .body(Body::from_string("success".to_string()))
+                        .body(Body::from_string(format!(r#"{{"poll":"{}"}}"#, res.uuid)))
                         .build();
                     Ok(response)
             }
@@ -174,20 +165,17 @@ mod routes {
             debug!("Fetching poll: {:?}", uuid);
 
             match Uuid::parse_str(&uuid.unwrap()) {
-                Err(err) => {
+                Err(_) => {
                     Err(tide::Error::from_str(StatusCode::BadRequest, "Invalid uuid specified"))
                 },
                 Ok(uuid) => {
-                    let mut tx = req.state().db.begin().await?;
-                    let poll = sqlx::query_as!(crate::dao::Poll, "SELECT * FROM polls WHERE uuid = $1", uuid)
-                        .fetch_one(&mut tx)
-                        .await;
+                    let db = &req.state().db;
 
-                    if let Ok(poll) = poll {
+                    if let Ok(poll) = crate::dao::Poll::from_uuid(uuid, db).await {
                         info!("Found poll: {:?}", poll);
-                        let mut choices = sqlx::query_as!(crate::dao::Choice,
+                        let choices = sqlx::query_as!(crate::dao::Choice,
                             "SELECT * FROM choices WHERE poll_id = $1 ORDER by ID ASC", poll.id)
-                            .fetch_all(&mut tx)
+                            .fetch_all(db)
                             .await?;
 
                         let response = crate::json::PollResponse { poll, choices };
@@ -204,7 +192,45 @@ mod routes {
         *  POST /api/v1/polls/:uuid/vote
         */
         pub async fn vote(mut req: Request<AppState>) -> Result<Body, tide::Error> {
-            Ok(Body::from_string("Hello".to_string()))
+            let uuid = req.param::<String>("uuid");
+
+            if uuid.is_err() {
+                return Err(tide::Error::from_str(StatusCode::BadRequest, "No uuid specified"));
+            }
+
+            let vote: crate::json::Vote = req.body_json().await?;
+
+            debug!("Fetching poll: {:?}", uuid);
+
+            match Uuid::parse_str(&uuid.unwrap()) {
+                Err(_) => {
+                    Err(tide::Error::from_str(StatusCode::BadRequest, "Invalid uuid specified"))
+                },
+                Ok(uuid) => {
+                    let db = &req.state().db;
+
+                    if let Ok(poll) = crate::dao::Poll::from_uuid(uuid, db).await {
+                        info!("Found poll: {:?}", poll);
+
+                        let mut tx = db.begin().await?;
+
+                        for (choice, dots) in vote.choices.iter() {
+                            sqlx::query!("
+                                INSERT INTO votes (voter, choice_id, poll_id, dots)
+                                    VALUES ($1, $2, $3, $4)
+                            ", vote.voter, *choice, poll.id, *dots)
+                                .execute(&mut tx)
+                                .await?;
+                        }
+
+                        tx.commit().await?;
+                        Ok(Body::from_string("success".to_string()))
+                    }
+                    else {
+                        Err(tide::Error::from_str(StatusCode::NotFound, "Could not find uuid"))
+                    }
+                }
+            }
         }
         /**
         *  GET /api/v1/polls/:uuid/results
@@ -215,77 +241,8 @@ mod routes {
     }
 }
 
-
-/**
- *  PUT /api/v1/polls
- */
-async fn create_poll(mut req: Request<Pool>) -> Result<tide::Body, tide::Error> {
-    use crate::schema::polls::dsl::*;
-    use crate::schema::choices::dsl::choices;
-    use crate::models::*;
-
-    let poll: crate::api_models::InsertablePoll = req.body_json().await?;
-    debug!("Poll received: {:?}", poll);
-
-    task::spawn_blocking(move || {
-        if let Ok(pgconn) = req.state().get() {
-            pgconn.transaction::<_, tide::Error, _>(|| {
-                match diesel::insert_into(polls).values(&poll.poll).get_result::<Poll>(&pgconn) {
-                    Ok(success) => {
-                        poll.choices.iter().map(|details| {
-                            let choice = InsertableChoice {
-                                poll_id: *success.id(),
-                                details: details.to_string(),
-                            };
-                            // TODO: Handle error
-                            let result = diesel::insert_into(choices).values(&choice).execute(&pgconn);
-                            debug!("choices insert: {:?}", result);
-                        }).collect::<()>();
-                        // Once the poll has been creatd, insert the choices
-                        debug!("inserted: {:?}", success);
-                        Ok(Body::from_json(&success).expect("Failed to serialize"))
-                    },
-                    Err(err) => {
-                        error!("Failed to insert: {:?}", err);
-                        Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to insert!"))
-                    },
-                }
-            })
-        }
-        else {
-            Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to get connection!"))
-        }
-    }).await
-}
-
-/**
- * Look up the poll based on the `uuid` parameter in the request
- */
-fn requested_poll(req: &Request<Pool>) -> Option<crate::models::Poll> {
-    use crate::schema::polls::dsl::*;
-
-    let poll_uuid = req.param("uuid");
-
-    if poll_uuid.is_err() {
-        warn!("No `uuid` parameter given");
-        return None;
-    }
-
-    // TODO: error handling on the uuid parse
-    let poll_uuid: String = poll_uuid.unwrap();
-    let poll_uuid: Uuid = Uuid::parse_str(&poll_uuid).unwrap();
-
-    if let Ok(pgconn) = req.state().get() {
-        if let Ok(poll) = polls.filter(uuid.eq(poll_uuid)).first(&pgconn) {
-            return Some(poll);
-        }
-    }
-    None
-}
-
 /**
  *  POST /api/v1/polls/:uuid/vote
- */
 async fn vote_in_poll(mut req: Request<Pool>) -> Result<Body, tide::Error> {
     use crate::models::*;
     use crate::schema::votes::dsl::votes;
@@ -324,9 +281,6 @@ async fn vote_in_poll(mut req: Request<Pool>) -> Result<Body, tide::Error> {
     }).await
 }
 
-/**
- *  GET /api/v1/polls/:uuid/results
- */
 async fn poll_results(req: Request<Pool>) -> Result<Body, tide::Error> {
     use crate::api_models::Tally;
     use crate::models::{Vote, Choice};
@@ -355,6 +309,7 @@ async fn poll_results(req: Request<Pool>) -> Result<Body, tide::Error> {
     }).await
 }
 
+*/
 
 
 #[async_std::main]
