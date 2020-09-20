@@ -78,16 +78,33 @@ mod dao {
     }
 }
 
+/**
+ * The json module contains all the JSON API stubs for requests and responses
+ *
+ * Each are named (hopefully) appropriately
+ */
 mod json {
-    use serde::Serialize;
+    use serde::{Deserialize, Serialize};
 
     #[derive(Serialize)]
     pub struct PollResponse {
         pub poll: crate::dao::Poll,
         pub choices: Vec<crate::dao::Choice>,
     }
+
+    #[derive(Deserialize)]
+    pub struct PollCreateRequest {
+        pub title: String,
+        pub choices: Vec<String>,
+    }
 }
 
+/**
+ * The routes module contains all the tide routes and the logic to fulfill the responses for each
+ * route.
+ *
+ * Modules are nested for cleaner organization here
+ */
 mod routes {
     use tide::{Body, Request, StatusCode};
 
@@ -101,7 +118,7 @@ mod routes {
     }
 
     pub mod polls {
-        use tide::{Body, Request, StatusCode};
+        use tide::{Body, Request, Response, StatusCode};
         use log::*;
         use sqlx::prelude::*;
         use uuid::Uuid;
@@ -110,8 +127,38 @@ mod routes {
         /**
         *  PUT /api/v1/polls
         */
-        pub async fn create(mut req: Request<AppState>) -> Result<Body, tide::Error> {
-            Ok(Body::from_string("Hello".to_string()))
+        pub async fn create(mut req: Request<AppState>) -> Result<Response, tide::Error> {
+            let poll = req.body_json::<crate::json::PollCreateRequest>().await?;
+            let mut tx = req.state().db.begin().await?;
+            if let Ok(res) = sqlx::query!("INSERT INTO polls (title, uuid) VALUES ($1, $2) RETURNING id", poll.title, Uuid::new_v4())
+                .fetch_one(&mut tx)
+                .await {
+
+                    let mut commit = true;
+                    /*
+                     * There doesn't seem to be a cleaner way to do a multiple insert with sqlx
+                     * that doesn't involve some string manipulation
+                     */
+                    for choice in poll.choices.iter() {
+                        let cin = sqlx::query!("INSERT INTO choices (poll_id, details) VALUES ($1, $2)", res.id, choice).execute(&mut tx).await;
+                        if cin.is_err() {
+                            commit = false;
+                            break;
+                        }
+                    }
+
+                    if commit {
+                        tx.commit().await?;
+                    }
+
+                    let response = Response::builder(StatusCode::Created)
+                        .body(Body::from_string("success".to_string()))
+                        .build();
+                    Ok(response)
+            }
+            else {
+                Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to create"))
+            }
         }
 
         /**
@@ -234,30 +281,6 @@ fn requested_poll(req: &Request<Pool>) -> Option<crate::models::Poll> {
         }
     }
     None
-}
-
-/**
- * GET /api/v1/polls/:uuid
- */
-async fn get_poll(req: Request<Pool>) -> Result<tide::Body, tide::Error> {
-    use crate::models::*;
-
-    task::spawn_blocking(move || {
-        // TODO: this is grabbing two connections from the pool, reorder
-        if let Ok(pgconn) = req.state().get() {
-            if let Some(poll) = requested_poll(&req) {
-                let choices: Vec<Choice> = Choice::belonging_to(&poll).get_results(&pgconn).expect("Failed to get relations");
-
-                let response = crate::api_models::Poll {
-                    poll,
-                    choices,
-                };
-
-                return Ok(Body::from_json(&response)?);
-            }
-        }
-        Err(tide::Error::from_str(StatusCode::InternalServerError, "Failed to look up poll!"))
-    }).await
 }
 
 /**
