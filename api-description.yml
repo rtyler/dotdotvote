@@ -10,6 +10,10 @@ info:
   license:
     name: "LGPL v3.0"
     url: "https://www.gnu.org/licenses/lgpl-3.0.en.html"
+servers:
+  - url: 'http://localhost:8000/api/v1'
+    description: Local dev server (APIv1)
+
 tags:
 - name: "poll"
   description: Poll manipulation APIs
