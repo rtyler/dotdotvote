@@ -5,3 +5,10 @@ link:https://en.wikipedia.org/wiki/Dot-voting[Dot-voting].
 
 The goal is to create a _simple_ and anonymous dot-voting system which allows
 people to create quick polls to run with their teams.
+
+
+
+== Hacking
+
+In order to experiment with the API, execute `cargo run` and then access
+link:http://localhost:8000/apidocs/index.html[localhost:8000/apidocs/index.html]
