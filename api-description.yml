@@ -1,5 +1,5 @@
 ---
-swagger: "2.0"
+openapi: "3.0.0"
 info:
   description: |
     Dot dot vote!
@@ -10,17 +10,12 @@ info:
   license:
     name: "LGPL v3.0"
     url: "https://www.gnu.org/licenses/lgpl-3.0.en.html"
-host: "localhost:8000"
-basePath: "/api/v1"
 tags:
 - name: "poll"
   description: Poll manipulation APIs
   externalDocs:
     description: "Find out more"
     url: "http://swagger.io"
-schemes:
-- "http"
-- "https"
 paths:
   /polls:
     put:
@@ -29,29 +24,25 @@ paths:
       summary: "Create a new poll"
       description: "Create a new poll"
       operationId: "createPoll"
-      consumes:
-      - "application/json"
-      produces:
-      - "application/json"
-      parameters:
-      - in: "body"
-        name: "body"
-        description: |
-          Insertable Poll object that must be provided in order to actually create the poll.
+      requestBody:
         required: true
-        schema:
-          $ref: "#/definitions/InsertablePoll"
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InsertablePoll'
       responses:
         '201':
           description: |
             Poll created successfully
-          schema:
-            type: 'object'
-            properties:
-              poll:
-                type: string
-                description: 'A UUID for the generated poll'
-                example: '8497479a-9f07-4530-9a5c-2824238d5975'
+          content:
+            application/json:
+              schema:
+                type: 'object'
+                properties:
+                  poll:
+                    type: string
+                    description: 'A UUID for the generated poll'
+                    example: '8497479a-9f07-4530-9a5c-2824238d5975'
         "422":
           description: |
             Invalid JSON supplied
@@ -69,20 +60,25 @@ paths:
       - in: path
         name: uuid
         required: true
-        type: string
-        format: uuid
+        schema:
+          type: string
+          format: uuid
+          example: '8497479a-9f07-4530-9a5c-2824238d5975'
 
       responses:
         200:
           description: Poll found
-          schema:
-            $ref: '#/definitions/PollResponse'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PollResponse'
         400:
           description: |
             Either the UUID parameter wasn't provided or it did not parse as a legitimate UUIDv4
         404:
           description: |
             Poll not found
+
   '/polls/{uuid}/vote':
     post:
       tags:
@@ -92,8 +88,10 @@ paths:
       - in: path
         name: uuid
         required: true
-        type: string
-        format: uuid
+        schema:
+          type: string
+          format: uuid
+          example: '8497479a-9f07-4530-9a5c-2824238d5975'
       responses:
         200:
           description: Vote submitted
@@ -103,6 +101,7 @@ paths:
         404:
           description: |
             Poll not found
+
   '/polls/{uuid}/results':
     get:
       tags:
@@ -112,99 +111,103 @@ paths:
       - in: path
         name: uuid
         required: true
-        type: string
-        format: uuid
+        schema:
+          type: string
+          format: uuid
+          example: '8497479a-9f07-4530-9a5c-2824238d5975'
       responses:
         200:
           description: Poll found
-          schema:
-            $ref: '#/definitions/PollResults'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PollResults'
         400:
           description: |
             Either the UUID parameter wasn't provided or it did not parse as a legitimate UUIDv4
         404:
           description: |
             Poll not found
-definitions:
-  PollResponse:
-    type: object
-    properties:
-      poll:
-        $ref: '#/definitions/RawPoll'
-      choices:
-        type: array
-        items:
-          $ref: '#/definitions/RawChoice'
-  PollResults:
-    type: object
-    properties:
-      poll:
-        $ref: '#/definitions/RawPoll'
-      choices:
-        type: array
-        items:
-          $ref: '#/definitions/RawChoice'
-      votes:
-        type: array
-        items:
-          $ref: '#/definitions/RawVote'
-  RawPoll:
-    type: object
-    properties:
-      id:
-        type: number
-        format: int32
-      uuid:
-        type: string
-        format: uuid
-      title:
-        type: string
-      created_at:
-        type: string
-        format: date-time
-  RawChoice:
-    type: object
-    properties:
-      id:
-        type: number
-        format: int32
-      poll_id:
-        type: number
-        format: int32
-      details:
-        type: string
-      created_at:
-        type: string
-        format: date-time
-  RawVote:
-    type: object
-    properties:
-      id:
-        type: number
-        format: int32
-      poll_id:
-        type: number
-        format: int32
-      choice_id:
-        type: number
-        format: int32
-      dots:
-        type: number
-        format: in32
-      voter:
-        type: string
-      created_at:
-        type: string
-        format: date-time
-
-  InsertablePoll:
-    type: "object"
-    properties:
-      title:
-        type: "string"
-        example: 'My amazing poll!'
-      choices:
-        type: "array"
-        items:
+components:
+  schemas:
+    PollResponse:
+      type: object
+      properties:
+        poll:
+          $ref: '#/components/schemas/RawPoll'
+        choices:
+          type: array
+          items:
+            $ref: '#/components/schemas/RawChoice'
+    PollResults:
+      type: object
+      properties:
+        poll:
+          $ref: '#/components/schemas/RawPoll'
+        choices:
+          type: array
+          items:
+            $ref: '#/components/schemas/RawChoice'
+        votes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RawVote'
+    RawPoll:
+      type: object
+      properties:
+        id:
+          type: number
+          format: int32
+        uuid:
+          type: string
+          format: uuid
+        title:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    RawChoice:
+      type: object
+      properties:
+        id:
+          type: number
+          format: int32
+        poll_id:
+          type: number
+          format: int32
+        details:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    RawVote:
+      type: object
+      properties:
+        id:
+          type: number
+          format: int32
+        poll_id:
+          type: number
+          format: int32
+        choice_id:
+          type: number
+          format: int32
+        dots:
+          type: number
+          format: in32
+        voter:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    InsertablePoll:
+      type: "object"
+      properties:
+        title:
           type: "string"
-          example: 'Choice 1'
+          example: 'My amazing poll!'
+        choices:
+          type: "array"
+          items:
+            type: "string"
+            example: 'Choice 1'
