@@ -366,6 +366,7 @@ async fn main() -> Result<(), std::io::Error> {
                   .allow_credentials(false);
 
                 app.with(cors);
+                app.at("/apidocs").serve_dir("apidocs/");
             }
 
             debug!("Configuring routes");
