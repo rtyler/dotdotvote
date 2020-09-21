@@ -55,6 +55,18 @@ mod dao {
     }
 
     impl Poll {
+        /*
+        pub async fn create(title: &str, tx: &mut (impl sqlx::Connection + Copy + sqlx::executor::RefExecutor<'_>)) -> Result<Poll, sqlx::Error> {
+            sqlx::query_as!(Poll,
+                "INSERT INTO polls (title, uuid) VALUES ($1, $2) RETURNING *",
+                title,
+                Uuid::new_v4()
+            )
+            .fetch_one(tx)
+            .await
+        }
+        */
+
         pub async fn from_uuid(uuid: uuid::Uuid, db: &crate::DbPool) -> Result<Poll, sqlx::Error> {
             sqlx::query_as!(Poll, "SELECT * FROM polls WHERE uuid = $1", uuid)
                 .fetch_one(db)
@@ -343,6 +355,20 @@ async fn main() -> Result<(), std::io::Error> {
         Ok(db) => {
             let state = AppState { db };
             let mut app = tide::with_state(state);
+
+            #[cfg(debug_assertions)]
+            {
+                info!("Enabling a very liberal CORS policy for debug purposes");
+                use tide::security::{CorsMiddleware, Origin};
+                let cors = CorsMiddleware::new()
+                  .allow_methods("GET, POST, PUT, OPTIONS".parse::<tide::http::headers::HeaderValue>().unwrap())
+                  .allow_origin(Origin::from("*"))
+                  .allow_credentials(false);
+
+                app.with(cors);
+            }
+
+            debug!("Configuring routes");
             app.at("/").get(routes::index);
             app.at("/api/v1/polls").put(routes::polls::create);
             app.at("/api/v1/polls/:uuid").get(routes::polls::get);
