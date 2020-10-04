@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    {{> _head }}
+    <title>Dot dot vote</title>
+  </head>
+
+  <body class="text-center">
+
+    <div class="cover-container d-flex h-100 p-3 mx-auto flex-column">
+      {{> _header}}
+      <main role="main" class="text-left">
+        <blockquote class="blockquote text-center p-2 font-italic">
+            <p>
+                Dot-voting is a quick and simple method for prioritizing a long list of options.
+            </p>
+            <p>
+                It’s less cognitively demanding than having to perform full ranking of all the options, because participants are not required to give a comparative judgment of each option, and it allows participants to express a preference for more than one option at the same time.
+            </p>
+            <p>
+                It also creates a sense of engagement and allows participants to see the decision process in action and understand how the final choice was made.
+            </p>
+            <footer class="blockquote-footer">
+                From <cite><a href="https://en.wikipedia.org/wiki/Dot-voting">Wikipedia</a></cite>:
+            </footer>
+        </blockquote>
+        <hr noshade/>
+        <p>
+            Dot dot vote is <a href="https://github.com/rtyler/dotdotvote">free
+            and open source software</a> created by <a
+            href="https://github.com/rtyler">R. Tyler Croy</a>. It is intended
+            to allow for quick and easy simple dot-voting exercises with groups
+            of all sizes.
+        </p>
+        <o>
+            The tool itself is written in <a href="https://rust-lang.org">Rust</a>
+            and <a href="https://github.com/http-rs/tide">Tide</a>, with <a href="https://postgresql.org">PostgreSQL</a>
+            storing poll data.
+        </p>
+      </main>
+
+      <footer class="mastfoot mt-auto">
+        <div class="inner">
+            <p>
+                Free and open source software created by
+                <a href="https://github.com/rtyler">R. Tyler Croy</a>
+                <br/>
+                Template and design based on examples created by
+                <a href="https://twitter.com/mdo">@mdo</a>.
+            </p>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>
+
+

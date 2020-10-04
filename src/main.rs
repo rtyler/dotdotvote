@@ -161,12 +161,33 @@ mod routes {
      *  GET /
      */
     pub async fn index(req: Request<AppState<'_>>) -> Result<Body, tide::Error> {
-        let mut body = req.state().render("index", &json!({})).await?;
+        let params = json!({
+            "page": "home"
+        });
+        let mut body = req.state().render("index", &params).await?;
         body.set_mime("text/html");
         Ok(body)
     }
 
-    pub mod polls {
+    /**
+     *  GET /new
+     */
+    pub async fn new(req: Request<AppState<'_>>) -> Result<Body, tide::Error> {
+        let mut body = req.state().render("new", &json!({})).await?;
+        body.set_mime("text/html");
+        Ok(body)
+    }
+
+    /**
+     *  GET /about
+     */
+    pub async fn about(req: Request<AppState<'_>>) -> Result<Body, tide::Error> {
+        let mut body = req.state().render("about", &json!({})).await?;
+        body.set_mime("text/html");
+        Ok(body)
+    }
+
+    pub mod api {
         use log::*;
         use tide::{Body, Request, Response, StatusCode};
         use uuid::Uuid;
@@ -414,11 +435,13 @@ async fn main() -> Result<(), tide::Error> {
 
     debug!("Configuring routes");
     app.at("/").get(routes::index);
-    app.at("/api/v1/polls").put(routes::polls::create);
-    app.at("/api/v1/polls/:uuid").get(routes::polls::get);
-    app.at("/api/v1/polls/:uuid/vote").post(routes::polls::vote);
+    app.at("/new").get(routes::new);
+    app.at("/about").get(routes::about);
+    app.at("/api/v1/polls").put(routes::api::create);
+    app.at("/api/v1/polls/:uuid").get(routes::api::get);
+    app.at("/api/v1/polls/:uuid/vote").post(routes::api::vote);
     app.at("/api/v1/polls/:uuid/results")
-        .get(routes::polls::results);
+        .get(routes::api::results);
     app.listen("127.0.0.1:8000").await?;
     Ok(())
 }
