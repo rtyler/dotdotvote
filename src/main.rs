@@ -387,44 +387,41 @@ mod routes {
 }
 
 #[async_std::main]
-async fn main() -> Result<(), std::io::Error> {
+async fn main() -> Result<(), tide::Error> {
     pretty_env_logger::init();
 
-    match create_pool().await {
-        Ok(db) => {
-            let state = AppState::new(db);
-            let mut app = tide::with_state(state);
+    let db = create_pool().await?;
+    let state = AppState::new(db);
+    let mut app = tide::with_state(state);
 
-            #[cfg(debug_assertions)]
-            {
-                info!("Enabling a very liberal CORS policy for debug purposes");
-                use tide::security::{CorsMiddleware, Origin};
-                let cors = CorsMiddleware::new()
-                    .allow_methods(
-                        "GET, POST, PUT, OPTIONS"
-                            .parse::<tide::http::headers::HeaderValue>()
-                            .unwrap(),
-                    )
-                    .allow_origin(Origin::from("*"))
-                    .allow_credentials(false);
+    #[cfg(debug_assertions)]
+    {
+        info!("Enabling a very liberal CORS policy for debug purposes");
+        use tide::security::{CorsMiddleware, Origin};
+        let cors = CorsMiddleware::new()
+            .allow_methods(
+                "GET, POST, PUT, OPTIONS"
+                    .parse::<tide::http::headers::HeaderValue>()
+                    .unwrap(),
+            )
+            .allow_origin(Origin::from("*"))
+            .allow_credentials(false);
 
-                app.with(cors);
-                app.at("/apidocs").serve_dir("apidocs/");
-            }
-
-            debug!("Configuring routes");
-            app.at("/").get(routes::index);
-            app.at("/api/v1/polls").put(routes::polls::create);
-            app.at("/api/v1/polls/:uuid").get(routes::polls::get);
-            app.at("/api/v1/polls/:uuid/vote").post(routes::polls::vote);
-            app.at("/api/v1/polls/:uuid/results")
-                .get(routes::polls::results);
-            app.listen("127.0.0.1:8000").await?;
-            Ok(())
-        }
-        Err(err) => {
-            error!("Could not initialize pool! {:?}", err);
-            Err(std::io::Error::new(std::io::ErrorKind::Other, err))
-        }
+        app.with(cors);
     }
+    /*
+     * All builds will have apidocs, since they're handy
+     */
+    app.at("/apidocs").serve_dir("apidocs/")?;
+    app.at("/static").serve_dir("static/")?;
+
+    debug!("Configuring routes");
+    app.at("/").get(routes::index);
+    app.at("/api/v1/polls").put(routes::polls::create);
+    app.at("/api/v1/polls/:uuid").get(routes::polls::get);
+    app.at("/api/v1/polls/:uuid/vote").post(routes::polls::vote);
+    app.at("/api/v1/polls/:uuid/results")
+        .get(routes::polls::results);
+    app.listen("127.0.0.1:8000").await?;
+    Ok(())
 }
