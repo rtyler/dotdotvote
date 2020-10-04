@@ -1,31 +1,69 @@
-use dotenv::dotenv;
-use log::*;
-use sqlx::postgres::PgPool;
-
-type DbPool = sqlx::Pool<sqlx::PgConnection>;
-
 /**
- * Struct for carrying application state into tide request handlers
+ * This is the main Dot dot vote application.
+ *
+ * Currently everything is packed into this one file, but there are a couple modules
+ * to encapsulate some functionality
  */
+use async_std::sync::{Arc, RwLock};
+use dotenv::dotenv;
+use handlebars::Handlebars;
+use log::*;
+use sqlx::PgPool;
+
 #[derive(Clone, Debug)]
-pub struct AppState {
-    pub db: DbPool,
+pub struct AppState<'a> {
+    pub db: PgPool,
+    hb: Arc<RwLock<Handlebars<'a>>>,
+}
+
+impl AppState<'_> {
+    fn new(db: PgPool) -> Self {
+        Self {
+            hb: Arc::new(RwLock::new(Handlebars::new())),
+            db: db,
+        }
+    }
+
+    pub async fn register_templates(&self) -> Result<(), handlebars::TemplateFileError> {
+        let mut hb = self.hb.write().await;
+        hb.clear_templates();
+        hb.register_templates_directory(".hbs", "views")
+    }
+
+    pub async fn render(
+        &self,
+        name: &str,
+        data: &serde_json::Value,
+    ) -> Result<tide::Body, tide::Error> {
+        /*
+         * In debug mode, reload the templates on ever render to avoid
+         * needing a restart
+         */
+        #[cfg(debug_assertions)]
+        {
+            self.register_templates().await;
+        }
+        let hb = self.hb.read().await;
+        let view = hb.render(name, data)?;
+        Ok(tide::Body::from_string(view))
+    }
 }
 
 /**
  * Create the sqlx connection pool for postgresql
  */
-async fn create_pool() -> Result<sqlx::Pool<sqlx::PgConnection>, sqlx::Error> {
+async fn create_pool() -> Result<sqlx::PgPool, sqlx::Error> {
     dotenv().ok();
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
-    PgPool::builder().max_size(5).build(&database_url).await
+    PgPool::connect(&database_url).await
 }
 
 mod dao {
     use chrono::{DateTime, Utc};
     use serde::Serialize;
+    use sqlx::PgPool;
     use uuid::Uuid;
 
     #[derive(Clone, Debug, Serialize)]
@@ -67,7 +105,7 @@ mod dao {
         }
         */
 
-        pub async fn from_uuid(uuid: uuid::Uuid, db: &crate::DbPool) -> Result<Poll, sqlx::Error> {
+        pub async fn from_uuid(uuid: uuid::Uuid, db: &PgPool) -> Result<Poll, sqlx::Error> {
             sqlx::query_as!(Poll, "SELECT * FROM polls WHERE uuid = $1", uuid)
                 .fetch_one(db)
                 .await
@@ -130,7 +168,7 @@ mod routes {
     /**
      *  GET /
      */
-    pub async fn index(_req: Request<AppState>) -> Result<String, tide::Error> {
+    pub async fn index(_req: Request<AppState<'_>>) -> Result<String, tide::Error> {
         Ok("Wilkommen".to_string())
     }
 
@@ -143,7 +181,7 @@ mod routes {
         /**
          *  PUT /api/v1/polls
          */
-        pub async fn create(mut req: Request<AppState>) -> Result<Response, tide::Error> {
+        pub async fn create(mut req: Request<AppState<'_>>) -> Result<Response, tide::Error> {
             let poll = req.body_json::<crate::json::PollCreateRequest>().await?;
             let mut tx = req.state().db.begin().await?;
             if let Ok(res) = sqlx::query!(
@@ -192,7 +230,7 @@ mod routes {
         /**
          * GET /api/v1/polls/:uuid
          */
-        pub async fn get(req: Request<AppState>) -> Result<Body, tide::Error> {
+        pub async fn get(req: Request<AppState<'_>>) -> Result<Body, tide::Error> {
             let uuid = req.param::<String>("uuid");
 
             if uuid.is_err() {
@@ -237,7 +275,7 @@ mod routes {
         /**
          *  POST /api/v1/polls/:uuid/vote
          */
-        pub async fn vote(mut req: Request<AppState>) -> Result<Body, tide::Error> {
+        pub async fn vote(mut req: Request<AppState<'_>>) -> Result<Body, tide::Error> {
             let uuid = req.param::<String>("uuid");
 
             if uuid.is_err() {
@@ -290,10 +328,11 @@ mod routes {
                 }
             }
         }
+
         /**
          *  GET /api/v1/polls/:uuid/results
          */
-        pub async fn results(req: Request<AppState>) -> Result<Body, tide::Error> {
+        pub async fn results(req: Request<AppState<'_>>) -> Result<Body, tide::Error> {
             let uuid = req.param::<String>("uuid");
 
             if uuid.is_err() {
@@ -353,7 +392,7 @@ async fn main() -> Result<(), std::io::Error> {
 
     match create_pool().await {
         Ok(db) => {
-            let state = AppState { db };
+            let state = AppState::new(db);
             let mut app = tide::with_state(state);
 
             #[cfg(debug_assertions)]
@@ -361,9 +400,13 @@ async fn main() -> Result<(), std::io::Error> {
                 info!("Enabling a very liberal CORS policy for debug purposes");
                 use tide::security::{CorsMiddleware, Origin};
                 let cors = CorsMiddleware::new()
-                  .allow_methods("GET, POST, PUT, OPTIONS".parse::<tide::http::headers::HeaderValue>().unwrap())
-                  .allow_origin(Origin::from("*"))
-                  .allow_credentials(false);
+                    .allow_methods(
+                        "GET, POST, PUT, OPTIONS"
+                            .parse::<tide::http::headers::HeaderValue>()
+                            .unwrap(),
+                    )
+                    .allow_origin(Origin::from("*"))
+                    .allow_credentials(false);
 
                 app.with(cors);
                 app.at("/apidocs").serve_dir("apidocs/");
