@@ -4,6 +4,9 @@
  * Currently everything is packed into this one file, but there are a couple modules
  * to encapsulate some functionality
  */
+#[macro_use]
+extern crate serde_json;
+
 use async_std::sync::{Arc, RwLock};
 use dotenv::dotenv;
 use handlebars::Handlebars;
@@ -47,17 +50,6 @@ impl AppState<'_> {
         let view = hb.render(name, data)?;
         Ok(tide::Body::from_string(view))
     }
-}
-
-/**
- * Create the sqlx connection pool for postgresql
- */
-async fn create_pool() -> Result<sqlx::PgPool, sqlx::Error> {
-    dotenv().ok();
-
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-
-    PgPool::connect(&database_url).await
 }
 
 mod dao {
@@ -161,15 +153,17 @@ mod json {
  * Modules are nested for cleaner organization here
  */
 mod routes {
-    use tide::Request;
+    use tide::{Body, Request};
 
     use crate::AppState;
 
     /**
      *  GET /
      */
-    pub async fn index(_req: Request<AppState<'_>>) -> Result<String, tide::Error> {
-        Ok("Wilkommen".to_string())
+    pub async fn index(req: Request<AppState<'_>>) -> Result<Body, tide::Error> {
+        let mut body = req.state().render("index", &json!({})).await?;
+        body.set_mime("text/html");
+        Ok(body)
     }
 
     pub mod polls {
@@ -389,8 +383,11 @@ mod routes {
 #[async_std::main]
 async fn main() -> Result<(), tide::Error> {
     pretty_env_logger::init();
+    dotenv().ok();
 
-    let db = create_pool().await?;
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+
+    let db = PgPool::connect(&database_url).await?;
     let state = AppState::new(db);
     let mut app = tide::with_state(state);
 
