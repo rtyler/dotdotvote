@@ -101,6 +101,11 @@ mod dao {
                 * that doesn't involve some string manipulation
                 */
             for choice in req.choices.iter() {
+                // Skip any empty choice
+                if choice.is_empty() {
+                    continue;
+                }
+
                 let cin = sqlx::query!(
                     "INSERT INTO choices (poll_id, details) VALUES ($1, $2)",
                     poll.id,

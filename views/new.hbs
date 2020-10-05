@@ -3,6 +3,27 @@
   <head>
     {{> _head }}
     <title>Dot dot vote</title>
+    <script type="text/javascript">
+        /* Used for naming new nodes properly */
+        let choices_offset = 2;
+
+        function addChoice() {
+            /* max out at 64 choices */
+            if (choices_offset >= 63) {
+                document.getElementById("add-more").disabled = true;
+                return;
+            }
+
+            let choice = document.getElementById("choice-node");
+            let clone = choice.cloneNode(true);
+            let input = clone.firstElementChild;
+            choices_offset += 1;
+            input.value = "";
+            input.placeholder = "...";
+            input.name = `choices[${choices_offset}]`;
+            document.getElementById("choices").appendChild(clone);
+        }
+    </script>
   </head>
 
   <body class="text-center">
@@ -25,21 +46,23 @@
                         The title will help frame the choices for the participants
                     </small>
                 </div>
-                <div class="form-group">
-                    <h3>Choices</h3>
-                    <input type="text" maxlength="1024" placeholder="Steal underpants.."
-                        class="form-control" name="choices[0]"/>
+                <div id="choices">
+                    <div class="form-group">
+                        <h3>Choices</h3>
+                        <input type="text" maxlength="1024" placeholder="Steal underpants.."
+                            class="form-control" name="choices[0]"/>
+                    </div>
+                    <div class="form-group">
+                        <input type="text" maxlength="1024" placeholder="???"
+                            class="form-control" name="choices[1]"/>
+                    </div>
+                    <div class="form-group" id="choice-node">
+                        <input type="text" maxlength="1024" placeholder="Profit"
+                            class="form-control" name="choices[2]"/>
+                    </div>
                 </div>
                 <div class="form-group">
-                    <input type="text" maxlength="1024" placeholder="???"
-                        class="form-control" name="choices[1]"/>
-                </div>
-                <div class="form-group">
-                    <input type="text" maxlength="1024" placeholder="Profit"
-                        class="form-control" name="choices[2]"/>
-                </div>
-                <div class="form-group" id="add-more">
-                    <button type="button" onclick="addChoice();" class="btn btn-sm btn-outline-light">Add choice</button>
+                    <button id="add-more" type="button" onclick="addChoice();" class="btn btn-sm btn-outline-light">Add choice</button>
                 </div>
                 <div class="text-right">
                     <button type="submit" class="btn btn-secondary">Submit</button>
