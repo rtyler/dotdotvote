@@ -19,6 +19,7 @@
             let input = clone.firstElementChild;
             choices_offset += 1;
             input.value = "";
+            input.required = false;
             input.placeholder = "...";
             input.name = `choices[${choices_offset}]`;
             document.getElementById("choices").appendChild(clone);
@@ -41,7 +42,7 @@
                     <label for="title">
                         <h2>Title</h2>
                     </label>
-                    <input type="text" maxlength="1024" placeholder="Priorities for next quarter.." class="form-control" name="title" id="title" aria-describedby="titleHelp"/>
+                    <input type="text" required="true" maxlength="1024" placeholder="Priorities for next quarter.." class="form-control" name="title" id="title" aria-describedby="titleHelp"/>
                     <small id="titleHelp" class="form-text">
                         The title will help frame the choices for the participants
                     </small>
@@ -49,15 +50,15 @@
                 <div id="choices">
                     <div class="form-group">
                         <h3>Choices</h3>
-                        <input type="text" maxlength="1024" placeholder="Steal underpants.."
+                        <input type="text" required="true" maxlength="1024" placeholder="Deliver Blue Steel?"
                             class="form-control" name="choices[0]"/>
                     </div>
                     <div class="form-group">
-                        <input type="text" maxlength="1024" placeholder="???"
+                        <input type="text" required="true" maxlength="1024" placeholder="Refactor Magnum?"
                             class="form-control" name="choices[1]"/>
                     </div>
                     <div class="form-group" id="choice-node">
-                        <input type="text" maxlength="1024" placeholder="Profit"
+                        <input type="text" required="true" maxlength="1024" placeholder="Launch Derelicte?"
                             class="form-control" name="choices[2]"/>
                     </div>
                 </div>

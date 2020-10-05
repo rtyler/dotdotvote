@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    {{> _head }}
+    <title>{{poll.poll.title}}</title>
+    <script type="text/javascript">
+        let dots = {{dots}};
+
+        function updateCount(choice) {
+            console.log(`Add dot to ${choice}`);
+        }
+    </script>
+  </head>
+
+  <body class="text-center">
+
+    <div class="cover-container d-flex h-100 p-3 mx-auto flex-column">
+      {{> _header}}
+      <main role="main" class="inner">
+        <div class="text-left">
+            <div class="title">
+                <h1>Poll: {{poll.poll.title}}</h1>
+            </div>
+            <div class="container-md">
+                Dots: <span id="dots">{{dots}}</span>
+
+                <table class="table table-striped table-dark table-hover">
+                    <thead class="thead-dark">
+                    <tr>
+                        <th>Choice</th>
+                        <th>Your vote</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                {{#each poll.choices}}
+                    <tr>
+                        <td class="col-8">
+                            {{this.details}}
+                        </td>
+                        <td class="col-sm">
+                            <input type="number" onchange="updateCount({{this.id}});" min="0" max="24"/>
+                        </td>
+                    </tr>
+                {{/each}}
+                </tbody>
+                </table>
+            </div>
+        </div>
+      </main>
+      {{> _footer}}
+    </div>
+  </body>
+</html>
+

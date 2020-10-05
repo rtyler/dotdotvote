@@ -184,7 +184,34 @@ mod msg {
  */
 mod routes {
     use crate::AppState;
+    use log::*;
     use tide::{Body, Request, StatusCode};
+    use uuid::Uuid;
+
+    /**
+     * Helper function to pull out a :uuid parameter from the path
+     */
+    fn get_uuid_param(req: &Request<AppState<'_>>) -> Result<Uuid, tide::Error> {
+        let uuid = req.param::<String>("uuid");
+
+        if uuid.is_err() {
+            return Err(tide::Error::from_str(
+                StatusCode::BadRequest,
+                "No uuid specified",
+            ));
+        }
+
+        debug!("Fetching poll: {:?}", uuid);
+
+        match Uuid::parse_str(&uuid.unwrap()) {
+            Err(_) => Err(tide::Error::from_str(
+                StatusCode::BadRequest,
+                "Invalid uuid specified",
+            )),
+            Ok(uuid) => Ok(uuid),
+        }
+    }
+
 
     /**
      *  GET /
@@ -233,7 +260,6 @@ mod routes {
     pub mod api {
         use log::*;
         use tide::{Body, Request, Response, StatusCode};
-        use uuid::Uuid;
 
         use crate::AppState;
         /**
@@ -253,44 +279,26 @@ mod routes {
          * GET /api/v1/polls/:uuid
          */
         pub async fn get(req: Request<AppState<'_>>) -> Result<Body, tide::Error> {
-            let uuid = req.param::<String>("uuid");
+            let uuid = super::get_uuid_param(&req)?;
+            let db = &req.state().db;
 
-            if uuid.is_err() {
-                return Err(tide::Error::from_str(
-                    StatusCode::BadRequest,
-                    "No uuid specified",
-                ));
-            }
+            if let Ok(poll) = crate::dao::Poll::from_uuid(uuid, db).await {
+                info!("Found poll: {:?}", poll);
+                let choices = sqlx::query_as!(
+                    crate::dao::Choice,
+                    "SELECT * FROM choices WHERE poll_id = $1 ORDER by ID ASC",
+                    poll.id
+                )
+                .fetch_all(db)
+                .await?;
 
-            debug!("Fetching poll: {:?}", uuid);
-
-            match Uuid::parse_str(&uuid.unwrap()) {
-                Err(_) => Err(tide::Error::from_str(
-                    StatusCode::BadRequest,
-                    "Invalid uuid specified",
-                )),
-                Ok(uuid) => {
-                    let db = &req.state().db;
-
-                    if let Ok(poll) = crate::dao::Poll::from_uuid(uuid, db).await {
-                        info!("Found poll: {:?}", poll);
-                        let choices = sqlx::query_as!(
-                            crate::dao::Choice,
-                            "SELECT * FROM choices WHERE poll_id = $1 ORDER by ID ASC",
-                            poll.id
-                        )
-                        .fetch_all(db)
-                        .await?;
-
-                        let response = crate::msg::PollResponse { poll, choices };
-                        Body::from_json(&response)
-                    } else {
-                        Err(tide::Error::from_str(
-                            StatusCode::NotFound,
-                            "Could not find uuid",
-                        ))
-                    }
-                }
+                let response = crate::msg::PollResponse { poll, choices };
+                Body::from_json(&response)
+            } else {
+                Err(tide::Error::from_str(
+                    StatusCode::NotFound,
+                    "Could not find uuid",
+                ))
             }
         }
 
@@ -298,56 +306,37 @@ mod routes {
          *  POST /api/v1/polls/:uuid/vote
          */
         pub async fn vote(mut req: Request<AppState<'_>>) -> Result<Body, tide::Error> {
-            let uuid = req.param::<String>("uuid");
-
-            if uuid.is_err() {
-                return Err(tide::Error::from_str(
-                    StatusCode::BadRequest,
-                    "No uuid specified",
-                ));
-            }
-
+            let uuid = super::get_uuid_param(&req)?;
             let vote: crate::msg::Vote = req.body_json().await?;
+            let db = &req.state().db;
 
-            debug!("Fetching poll: {:?}", uuid);
+            if let Ok(poll) = crate::dao::Poll::from_uuid(uuid, db).await {
+                info!("Found poll: {:?}", poll);
 
-            match Uuid::parse_str(&uuid.unwrap()) {
-                Err(_) => Err(tide::Error::from_str(
-                    StatusCode::BadRequest,
-                    "Invalid uuid specified",
-                )),
-                Ok(uuid) => {
-                    let db = &req.state().db;
+                let mut tx = db.begin().await?;
 
-                    if let Ok(poll) = crate::dao::Poll::from_uuid(uuid, db).await {
-                        info!("Found poll: {:?}", poll);
-
-                        let mut tx = db.begin().await?;
-
-                        for (choice, dots) in vote.choices.iter() {
-                            sqlx::query!(
-                                "
-                                INSERT INTO votes (voter, choice_id, poll_id, dots)
-                                    VALUES ($1, $2, $3, $4)
-                            ",
-                                vote.voter,
-                                *choice,
-                                poll.id,
-                                *dots
-                            )
-                            .execute(&mut tx)
-                            .await?;
-                        }
-
-                        tx.commit().await?;
-                        Ok(Body::from_string("success".to_string()))
-                    } else {
-                        Err(tide::Error::from_str(
-                            StatusCode::NotFound,
-                            "Could not find uuid",
-                        ))
-                    }
+                for (choice, dots) in vote.choices.iter() {
+                    sqlx::query!(
+                        "
+                        INSERT INTO votes (voter, choice_id, poll_id, dots)
+                            VALUES ($1, $2, $3, $4)
+                    ",
+                        vote.voter,
+                        *choice,
+                        poll.id,
+                        *dots
+                    )
+                    .execute(&mut tx)
+                    .await?;
                 }
+
+                tx.commit().await?;
+                Ok(Body::from_string("success".to_string()))
+            } else {
+                Err(tide::Error::from_str(
+                    StatusCode::NotFound,
+                    "Could not find uuid",
+                ))
             }
         }
 
@@ -355,54 +344,36 @@ mod routes {
          *  GET /api/v1/polls/:uuid/results
          */
         pub async fn results(req: Request<AppState<'_>>) -> Result<Body, tide::Error> {
-            let uuid = req.param::<String>("uuid");
+            let uuid = super::get_uuid_param(&req)?;
+            let db = &req.state().db;
 
-            if uuid.is_err() {
-                return Err(tide::Error::from_str(
-                    StatusCode::BadRequest,
-                    "No uuid specified",
-                ));
-            }
+            if let Ok(poll) = crate::dao::Poll::from_uuid(uuid, db).await {
+                let choices = sqlx::query_as!(
+                    crate::dao::Choice,
+                    "SELECT * FROM choices WHERE poll_id = $1",
+                    poll.id
+                )
+                .fetch_all(db)
+                .await?;
+                let votes = sqlx::query_as!(
+                    crate::dao::Vote,
+                    "SELECT * FROM votes WHERE poll_id = $1",
+                    poll.id
+                )
+                .fetch_all(db)
+                .await?;
 
-            debug!("Fetching poll: {:?}", uuid);
-
-            match Uuid::parse_str(&uuid.unwrap()) {
-                Err(_) => Err(tide::Error::from_str(
-                    StatusCode::BadRequest,
-                    "Invalid uuid specified",
-                )),
-                Ok(uuid) => {
-                    let db = &req.state().db;
-
-                    if let Ok(poll) = crate::dao::Poll::from_uuid(uuid, db).await {
-                        let choices = sqlx::query_as!(
-                            crate::dao::Choice,
-                            "SELECT * FROM choices WHERE poll_id = $1",
-                            poll.id
-                        )
-                        .fetch_all(db)
-                        .await?;
-                        let votes = sqlx::query_as!(
-                            crate::dao::Vote,
-                            "SELECT * FROM votes WHERE poll_id = $1",
-                            poll.id
-                        )
-                        .fetch_all(db)
-                        .await?;
-
-                        let results = crate::msg::PollResults {
-                            poll,
-                            choices,
-                            votes,
-                        };
-                        Ok(Body::from_json(&results)?)
-                    } else {
-                        Err(tide::Error::from_str(
-                            StatusCode::NotFound,
-                            "Could not find uuid",
-                        ))
-                    }
-                }
+                let results = crate::msg::PollResults {
+                    poll,
+                    choices,
+                    votes,
+                };
+                Ok(Body::from_json(&results)?)
+            } else {
+                Err(tide::Error::from_str(
+                    StatusCode::NotFound,
+                    "Could not find uuid",
+                ))
             }
         }
     }
@@ -445,6 +416,7 @@ async fn main() -> Result<(), tide::Error> {
     app.at("/new").get(routes::new);
     app.at("/create").post(routes::create);
     app.at("/about").get(routes::about);
+    app.at("/poll/:uuid").get(routes::get_poll);
     app.at("/api/v1/polls").put(routes::api::create);
     app.at("/api/v1/polls/:uuid").get(routes::api::get);
     app.at("/api/v1/polls/:uuid/vote").post(routes::api::vote);
