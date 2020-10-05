@@ -10,9 +10,42 @@
     <div class="cover-container d-flex h-100 p-3 mx-auto flex-column">
       {{> _header}}
       <main role="main" class="inner">
-        <p>
-        Hello world
-        </p>
+        <div class="text-left">
+            <h1>Create poll</h1>
+        </div>
+
+        <div>
+            <form method="POST" action="/create">
+                <div class="form-group">
+                    <label for="title">
+                        <h2>Title</h2>
+                    </label>
+                    <input type="text" maxlength="1024" placeholder="Priorities for next quarter.." class="form-control" name="title" id="title" aria-describedby="titleHelp"/>
+                    <small id="titleHelp" class="form-text">
+                        The title will help frame the choices for the participants
+                    </small>
+                </div>
+                <div class="form-group">
+                    <h3>Choices</h3>
+                    <input type="text" maxlength="1024" placeholder="Steal underpants.."
+                        class="form-control" name="choices[0]"/>
+                </div>
+                <div class="form-group">
+                    <input type="text" maxlength="1024" placeholder="???"
+                        class="form-control" name="choices[1]"/>
+                </div>
+                <div class="form-group">
+                    <input type="text" maxlength="1024" placeholder="Profit"
+                        class="form-control" name="choices[2]"/>
+                </div>
+                <div class="form-group" id="add-more">
+                    <button type="button" onclick="addChoice();" class="btn btn-sm btn-outline-light">Add choice</button>
+                </div>
+                <div class="text-right">
+                    <button type="submit" class="btn btn-secondary">Submit</button>
+                </div>
+            </form>
+        </div>
       </main>
 
       <footer class="mastfoot mt-auto">
