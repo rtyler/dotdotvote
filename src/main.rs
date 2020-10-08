@@ -235,11 +235,45 @@ mod routes {
     }
 
     /**
+     *  GET /poll/:uuid
+     */
+    pub async fn get_poll(req: Request<AppState<'_>>) -> Result<Body, tide::Error> {
+        let uuid = get_uuid_param(&req)?;
+        let db = &req.state().db;
+
+        if let Ok(poll) = crate::dao::Poll::from_uuid(uuid, db).await {
+            info!("Found poll: {:?}", poll);
+            let choices = sqlx::query_as!(
+                crate::dao::Choice,
+                "SELECT * FROM choices WHERE poll_id = $1 ORDER by ID ASC",
+                poll.id
+            )
+            .fetch_all(db)
+            .await?;
+            let response = crate::msg::PollResponse { poll, choices };
+
+            let mut body = req.state().render("view_poll",
+                &json!({
+                    "poll" : response,
+                    "dots" : 3,
+                })).await?;
+            body.set_mime("text/html");
+            Ok(body)
+        } else {
+            Err(tide::Error::from_str(
+                StatusCode::NotFound,
+                "Could not find uuid",
+            ))
+        }
+    }
+
+    /**
      *  POST /create
      */
     pub async fn create(mut req: Request<AppState<'_>>) -> tide::Result {
         let params = req.body_string().await?;
         if let Ok(create) = serde_qs::Config::new(5, false).deserialize_str::<crate::msg::PollCreateRequest>(&params) {
+            log::debug!("create: {:?}", create);
             let poll = crate::dao::Poll::create(create, &req.state().db).await?;
             Ok(tide::Redirect::new(format!("/poll/{}", poll.uuid)).into())
         }

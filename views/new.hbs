@@ -33,21 +33,28 @@
       {{> _header}}
       <main role="main" class="inner">
         <div class="text-left">
-            <h1>Create poll</h1>
+            <p>
+                Dot-voting polls are active for <strong>30 days</strong> and
+                then will be deleted from the system.
+                <br/>
+                A unique link will be generated that can be shared with
+                participants. They may use that link to vote and after they
+                have voted they will be able to view the results.
+            </p>
         </div>
 
         <div>
             <form method="POST" action="/create">
-                <div class="form-group">
+                <div class="text-left form-group">
                     <label for="title">
                         <h2>Title</h2>
                     </label>
                     <input type="text" required="true" maxlength="1024" placeholder="Priorities for next quarter.." class="form-control" name="title" id="title" aria-describedby="titleHelp"/>
-                    <small id="titleHelp" class="form-text">
+                    <small id="titleHelp" class="text-right form-text">
                         The title will help frame the choices for the participants
                     </small>
                 </div>
-                <div id="choices">
+                <div id="choices" class="text-left">
                     <div class="form-group">
                         <h3>Choices</h3>
                         <input type="text" required="true" maxlength="1024" placeholder="Deliver Blue Steel?"
@@ -63,7 +70,7 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <button id="add-more" type="button" onclick="addChoice();" class="btn btn-sm btn-outline-light">Add choice</button>
+                    <button id="add-more" type="button" onclick="addChoice();" class="btn btn-sm btn-secondary">Add choice</button>
                 </div>
                 <div class="text-right">
                     <button type="submit" class="btn btn-secondary">Submit</button>

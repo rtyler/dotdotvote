@@ -4,10 +4,24 @@
     {{> _head }}
     <title>{{poll.poll.title}}</title>
     <script type="text/javascript">
-        let dots = {{dots}};
+        const dots = {{dots}};
 
         function updateCount(choice) {
-            console.log(`Add dot to ${choice}`);
+            let el = document.getElementById(`dots-${choice}`);
+
+            let total = 0;
+            for (item of document.getElementsByClassName('dot-input')) {
+                total += (item.valueAsNumber || 0);
+            }
+            /** You can't vote this much silly */
+            if (total > dots) {
+                el.value = el.valueAsNumber - (total - dots);
+            }
+            else {
+                document.getElementById("dots").innerHTML = (dots - total);
+            }
+
+            return true;
         }
     </script>
   </head>
@@ -19,31 +33,47 @@
       <main role="main" class="inner">
         <div class="text-left">
             <div class="title">
-                <h1>Poll: {{poll.poll.title}}</h1>
+                <h2>{{poll.poll.title}}</h1>
             </div>
             <div class="container-md">
-                Dots: <span id="dots">{{dots}}</span>
+                <div class="text-right">
+                    Dots left <span id="dots">{{dots}}</span>
+                </div>
 
-                <table class="table table-striped table-dark table-hover">
-                    <thead class="thead-dark">
-                    <tr>
-                        <th>Choice</th>
-                        <th>Your vote</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                {{#each poll.choices}}
-                    <tr>
-                        <td class="col-8">
-                            {{this.details}}
-                        </td>
-                        <td class="col-sm">
-                            <input type="number" onchange="updateCount({{this.id}});" min="0" max="24"/>
-                        </td>
-                    </tr>
-                {{/each}}
-                </tbody>
-                </table>
+                <form action="/poll/{{poll.poll.uuid}}" method="POST">
+                    <table class="table table-striped table-hover">
+                        <thead class="thead">
+                        <tr>
+                            <th>Choice</th>
+                            <th>Your vote</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {{#each poll.choices}}
+                            <tr>
+                                <td class="col-8">
+                                    {{this.details}}
+                                </td>
+                                <td class="col-sm">
+                                    <input class="dot-input" type="number" id="dots-{{this.id}}" onchange="return updateCount({{this.id}});" min="0" max="24" value="0"/>
+                                </td>
+                            </tr>
+                        {{/each}}
+                        </tbody>
+                    </table>
+                    <div class="form-group">
+                        <label for="name">
+                            <h2>Name/alias</h2>
+                        </label>
+                        <input type="text" placeholder="Ruth B. G." name="name" maxlength="1024" required="true" class="form-control" aria-describedby="nameHelp"/>
+                        <small id="nameHelp" class="text-right form-text">
+                            The name or alias your team can recognize your votes by.
+                        </small>
+                    </div>
+                    <div class="text-right">
+                        <button type="submit" class="btn btn-secondary">Vote</button>
+                    </div>
+                </form>
             </div>
         </div>
       </main>
