@@ -56,6 +56,7 @@ mod dao {
     use chrono::{DateTime, Utc};
     use serde::Serialize;
     use sqlx::PgPool;
+    use std::collections::HashMap;
     use uuid::Uuid;
 
     #[derive(Clone, Debug, Serialize)]
@@ -130,6 +131,38 @@ mod dao {
             sqlx::query_as!(Poll, "SELECT * FROM polls WHERE uuid = $1", uuid)
                 .fetch_one(db)
                 .await
+        }
+
+        /**
+         * Vote on the given Poll.
+         *
+         * The Ballot is exicted to be an map of (choice_id, num_dots)
+         */
+        pub async fn vote(&self, voter: &str, ballot: HashMap<i32, i32>, db: &PgPool) -> Result<(), sqlx::Error> {
+            let mut tx = db.begin().await?;
+
+            for (choice, dots) in ballot.iter() {
+                // No need to record an empty vote
+                if *dots == 0 {
+                    continue;
+                }
+
+                sqlx::query!(
+                    "
+                    INSERT INTO votes (voter, choice_id, poll_id, dots)
+                        VALUES ($1, $2, $3, $4)
+                ",
+                    voter,
+                    *choice,
+                    self.id,
+                    *dots
+                )
+                .execute(&mut tx)
+                .await?;
+            }
+
+            tx.commit().await?;
+            Ok(())
         }
     }
 }
@@ -266,6 +299,33 @@ mod routes {
             ))
         }
     }
+    /**
+     *  POST /poll/:uuid
+     */
+    pub async fn vote_for_poll(mut req: Request<AppState<'_>>) -> tide::Result {
+        use std::collections::HashMap;
+
+        let uuid = get_uuid_param(&req)?;
+        let mut votes: HashMap<String, String> = req.body_form().await?;
+        let db = &req.state().db;
+
+        if let Ok(poll) = crate::dao::Poll::from_uuid(uuid, db).await {
+            info!("Found poll: {:?}", poll);
+            // Pop the name off the hash so the rest will be votes
+            let name = votes.remove("name").unwrap_or("Unknown".to_string());
+            // TODO better error handline
+            let choices = votes.iter().map(|(k, v)| (k.parse().unwrap(), v.parse().unwrap())).collect();
+
+            poll.vote(&name, choices, &db).await?;
+
+            Ok(tide::Redirect::new(format!("/poll/{}/results", poll.uuid)).into())
+        } else {
+            Err(tide::Error::from_str(
+                StatusCode::NotFound,
+                "Could not find uuid",
+            ))
+        }
+    }
 
     /**
      *  POST /create
@@ -346,25 +406,7 @@ mod routes {
 
             if let Ok(poll) = crate::dao::Poll::from_uuid(uuid, db).await {
                 info!("Found poll: {:?}", poll);
-
-                let mut tx = db.begin().await?;
-
-                for (choice, dots) in vote.choices.iter() {
-                    sqlx::query!(
-                        "
-                        INSERT INTO votes (voter, choice_id, poll_id, dots)
-                            VALUES ($1, $2, $3, $4)
-                    ",
-                        vote.voter,
-                        *choice,
-                        poll.id,
-                        *dots
-                    )
-                    .execute(&mut tx)
-                    .await?;
-                }
-
-                tx.commit().await?;
+                poll.vote(&vote.voter, vote.choices, &db).await?;
                 Ok(Body::from_string("success".to_string()))
             } else {
                 Err(tide::Error::from_str(
@@ -451,6 +493,8 @@ async fn main() -> Result<(), tide::Error> {
     app.at("/create").post(routes::create);
     app.at("/about").get(routes::about);
     app.at("/poll/:uuid").get(routes::get_poll);
+    app.at("/poll/:uuid").post(routes::vote_for_poll);
+
     app.at("/api/v1/polls").put(routes::api::create);
     app.at("/api/v1/polls/:uuid").get(routes::api::get);
     app.at("/api/v1/polls/:uuid/vote").post(routes::api::vote);
