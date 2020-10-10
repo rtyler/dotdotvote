@@ -75,6 +75,18 @@ mod dao {
         pub created_at: DateTime<Utc>,
     }
 
+    impl Choice {
+        pub async fn for_poll(id: i32, db: &PgPool) -> Result<Vec<Choice>, sqlx::Error> {
+            sqlx::query_as!(
+                Self,
+                "SELECT * FROM choices WHERE poll_id = $1 ORDER by ID ASC",
+                id
+            )
+            .fetch_all(db)
+            .await
+        }
+    }
+
     #[derive(Clone, Debug, Serialize)]
     pub struct Vote {
         pub id: i32,
@@ -85,10 +97,22 @@ mod dao {
         pub created_at: DateTime<Utc>,
     }
 
+    impl Vote {
+        pub async fn for_poll(id: i32, db: &PgPool) -> Result<Vec<Vote>, sqlx::Error> {
+            sqlx::query_as!(Self, "SELECT * FROM votes WHERE poll_id = $1", id)
+                .fetch_all(db)
+                .await
+        }
+    }
+
     impl Poll {
-        pub async fn create(req: crate::msg::PollCreateRequest, db: &PgPool) -> Result<Poll, sqlx::Error> {
+        pub async fn create(
+            req: crate::msg::PollCreateRequest,
+            db: &PgPool,
+        ) -> Result<Poll, sqlx::Error> {
             let mut tx = db.begin().await?;
-            let poll = sqlx::query_as!(Poll,
+            let poll = sqlx::query_as!(
+                Poll,
                 "INSERT INTO polls (title, uuid) VALUES ($1, $2) RETURNING *",
                 req.title,
                 Uuid::new_v4()
@@ -98,9 +122,9 @@ mod dao {
 
             let mut commit = true;
             /*
-                * There doesn't seem to be a cleaner way to do a multiple insert with sqlx
-                * that doesn't involve some string manipulation
-                */
+             * There doesn't seem to be a cleaner way to do a multiple insert with sqlx
+             * that doesn't involve some string manipulation
+             */
             for choice in req.choices.iter() {
                 // Skip any empty choice
                 if choice.is_empty() {
@@ -124,7 +148,7 @@ mod dao {
                 tx.commit().await?;
             }
 
-            return Ok(poll)
+            return Ok(poll);
         }
 
         pub async fn from_uuid(uuid: uuid::Uuid, db: &PgPool) -> Result<Poll, sqlx::Error> {
@@ -138,7 +162,12 @@ mod dao {
          *
          * The Ballot is exicted to be an map of (choice_id, num_dots)
          */
-        pub async fn vote(&self, voter: &str, ballot: HashMap<i32, i32>, db: &PgPool) -> Result<(), sqlx::Error> {
+        pub async fn vote(
+            &self,
+            voter: &str,
+            ballot: HashMap<i32, i32>,
+            db: &PgPool,
+        ) -> Result<(), sqlx::Error> {
             let mut tx = db.begin().await?;
 
             for (choice, dots) in ballot.iter() {
@@ -207,6 +236,14 @@ mod msg {
         pub choices: Vec<crate::dao::Choice>,
         pub votes: Vec<crate::dao::Vote>,
     }
+
+    #[derive(Debug, Serialize)]
+    pub struct PollResult {
+        /// Choice details
+        pub details: String,
+        pub total: i64,
+        pub voters: String,
+    }
 }
 
 /**
@@ -218,6 +255,7 @@ mod msg {
 mod routes {
     use crate::AppState;
     use log::*;
+    use std::collections::HashMap;
     use tide::{Body, Request, StatusCode};
     use uuid::Uuid;
 
@@ -244,7 +282,6 @@ mod routes {
             Ok(uuid) => Ok(uuid),
         }
     }
-
 
     /**
      *  GET /
@@ -285,11 +322,75 @@ mod routes {
             .await?;
             let response = crate::msg::PollResponse { poll, choices };
 
-            let mut body = req.state().render("view_poll",
-                &json!({
-                    "poll" : response,
-                    "dots" : 3,
-                })).await?;
+            let mut body = req
+                .state()
+                .render(
+                    "view_poll",
+                    &json!({
+                        "poll" : response,
+                        "dots" : 3,
+                    }),
+                )
+                .await?;
+            body.set_mime("text/html");
+            Ok(body)
+        } else {
+            Err(tide::Error::from_str(
+                StatusCode::NotFound,
+                "Could not find uuid",
+            ))
+        }
+    }
+
+    /**
+     *  GET /poll/:uuid/results
+     */
+    pub async fn poll_results(req: Request<AppState<'_>>) -> Result<Body, tide::Error> {
+        use crate::dao::Choice;
+        let uuid = get_uuid_param(&req)?;
+        let db = &req.state().db;
+
+        if let Ok(poll) = crate::dao::Poll::from_uuid(uuid, db).await {
+            info!("Found poll: {:?}", poll);
+            let choices = Choice::for_poll(poll.id, &db).await?;
+            let choices: HashMap<i32, Choice> = choices
+                .iter()
+                .map(|choice| (choice.id, choice.clone()))
+                .collect();
+
+            // Really just using this as an ordering function
+            let results = sqlx::query!(
+                "SELECT choice_id, sum(dots) as dots, string_agg(voter, ', ') as voters FROM votes
+                    WHERE poll_id = $1 GROUP BY choice_id ORDER BY dots DESC;",
+                poll.id
+            )
+            .fetch_all(db)
+            .await?;
+
+            let results: Vec<crate::msg::PollResult> = results
+                .iter()
+                .map(|rec| {
+                    let total = rec.dots.unwrap_or(0);
+
+                    crate::msg::PollResult {
+                        total,
+                        details: choices.get(&rec.choice_id).unwrap().details.clone(),
+                        voters: rec.voters.as_ref().unwrap_or(&"".to_string()).to_string(),
+                    }
+                })
+                .collect();
+            debug!("results: {:?}", results);
+
+            let mut body = req
+                .state()
+                .render(
+                    "poll_results",
+                    &json!({
+                        "poll" : poll,
+                        "results" : results,
+                    }),
+                )
+                .await?;
             body.set_mime("text/html");
             Ok(body)
         } else {
@@ -303,8 +404,6 @@ mod routes {
      *  POST /poll/:uuid
      */
     pub async fn vote_for_poll(mut req: Request<AppState<'_>>) -> tide::Result {
-        use std::collections::HashMap;
-
         let uuid = get_uuid_param(&req)?;
         let mut votes: HashMap<String, String> = req.body_form().await?;
         let db = &req.state().db;
@@ -314,7 +413,10 @@ mod routes {
             // Pop the name off the hash so the rest will be votes
             let name = votes.remove("name").unwrap_or("Unknown".to_string());
             // TODO better error handline
-            let choices = votes.iter().map(|(k, v)| (k.parse().unwrap(), v.parse().unwrap())).collect();
+            let choices = votes
+                .iter()
+                .map(|(k, v)| (k.parse().unwrap(), v.parse().unwrap()))
+                .collect();
 
             poll.vote(&name, choices, &db).await?;
 
@@ -332,13 +434,17 @@ mod routes {
      */
     pub async fn create(mut req: Request<AppState<'_>>) -> tide::Result {
         let params = req.body_string().await?;
-        if let Ok(create) = serde_qs::Config::new(5, false).deserialize_str::<crate::msg::PollCreateRequest>(&params) {
+        if let Ok(create) = serde_qs::Config::new(5, false)
+            .deserialize_str::<crate::msg::PollCreateRequest>(&params)
+        {
             log::debug!("create: {:?}", create);
             let poll = crate::dao::Poll::create(create, &req.state().db).await?;
             Ok(tide::Redirect::new(format!("/poll/{}", poll.uuid)).into())
-        }
-        else {
-            Err(tide::Error::from_str(StatusCode::InternalServerError,  "Could not process form"))
+        } else {
+            Err(tide::Error::from_str(
+                StatusCode::InternalServerError,
+                "Could not process form",
+            ))
         }
     }
 
@@ -378,15 +484,9 @@ mod routes {
 
             if let Ok(poll) = crate::dao::Poll::from_uuid(uuid, db).await {
                 info!("Found poll: {:?}", poll);
-                let choices = sqlx::query_as!(
-                    crate::dao::Choice,
-                    "SELECT * FROM choices WHERE poll_id = $1 ORDER by ID ASC",
-                    poll.id
-                )
-                .fetch_all(db)
-                .await?;
-
+                let choices = crate::dao::Choice::for_poll(poll.id, &db).await?;
                 let response = crate::msg::PollResponse { poll, choices };
+
                 Body::from_json(&response)
             } else {
                 Err(tide::Error::from_str(
@@ -424,20 +524,8 @@ mod routes {
             let db = &req.state().db;
 
             if let Ok(poll) = crate::dao::Poll::from_uuid(uuid, db).await {
-                let choices = sqlx::query_as!(
-                    crate::dao::Choice,
-                    "SELECT * FROM choices WHERE poll_id = $1",
-                    poll.id
-                )
-                .fetch_all(db)
-                .await?;
-                let votes = sqlx::query_as!(
-                    crate::dao::Vote,
-                    "SELECT * FROM votes WHERE poll_id = $1",
-                    poll.id
-                )
-                .fetch_all(db)
-                .await?;
+                let choices = crate::dao::Choice::for_poll(poll.id, &db).await?;
+                let votes = crate::dao::Vote::for_poll(poll.id, &db).await?;
 
                 let results = crate::msg::PollResults {
                     poll,
@@ -494,6 +582,7 @@ async fn main() -> Result<(), tide::Error> {
     app.at("/about").get(routes::about);
     app.at("/poll/:uuid").get(routes::get_poll);
     app.at("/poll/:uuid").post(routes::vote_for_poll);
+    app.at("/poll/:uuid/results").get(routes::poll_results);
 
     app.at("/api/v1/polls").put(routes::api::create);
     app.at("/api/v1/polls/:uuid").get(routes::api::get);

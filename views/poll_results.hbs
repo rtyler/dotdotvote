@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    {{> _head }}
+    <title>Results for {{poll.title}}</title>
+    <script type="text/javascript">
+    </script>
+  </head>
+
+  <body class="text-center">
+
+    <div class="cover-container d-flex h-100 p-3 mx-auto flex-column">
+      {{> _header}}
+      <main role="main" class="inner">
+        <div class="text-left">
+            <div class="title">
+                <h2>{{poll.title}}</h1>
+            </div>
+            <div class="container-md">
+
+                <table class="table table-striped table-hover">
+                    <thead class="thead">
+                    <tr>
+                        <th>Choice</th>
+                        <th>Votes</th>
+                        <th>By</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {{#each results}}
+                        <tr>
+                            <td class="col-4">
+                                {{this.details}}
+                            </td>
+                            <td class="col-2">
+                                {{this.total}}
+                            </td>
+                            <td class="col-4">
+                                {{this.voters}}
+                            </td>
+                        </tr>
+                    {{/each}}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+      </main>
+      {{> _footer}}
+    </div>
+  </body>
+</html>
+
