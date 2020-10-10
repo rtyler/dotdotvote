@@ -310,6 +310,7 @@ mod routes {
     pub async fn get_poll(req: Request<AppState<'_>>) -> Result<Body, tide::Error> {
         let uuid = get_uuid_param(&req)?;
         let db = &req.state().db;
+        let qs: HashMap<String, String> = req.query()?;
 
         if let Ok(poll) = crate::dao::Poll::from_uuid(uuid, db).await {
             info!("Found poll: {:?}", poll);
@@ -329,6 +330,7 @@ mod routes {
                     &json!({
                         "poll" : response,
                         "dots" : 3,
+                        "just_created" : qs.contains_key("created"),
                     }),
                 )
                 .await?;
@@ -439,7 +441,7 @@ mod routes {
         {
             log::debug!("create: {:?}", create);
             let poll = crate::dao::Poll::create(create, &req.state().db).await?;
-            Ok(tide::Redirect::new(format!("/poll/{}", poll.uuid)).into())
+            Ok(tide::Redirect::new(format!("/poll/{}?created=1", poll.uuid)).into())
         } else {
             Err(tide::Error::from_str(
                 StatusCode::InternalServerError,

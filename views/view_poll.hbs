@@ -32,6 +32,24 @@
       {{> _header}}
       <main role="main" class="inner">
         <div class="text-left">
+
+            {{#if just_created }}
+            <div class="alert alert-info">
+                <p>
+                    <strong>
+                        Your dot-voting poll has been created!
+                    </strong>
+                </p>
+                <p>
+                    <a href="/poll/{{poll.poll.uuid}}">This link</a>
+                    can be shared with participants to vote.
+                    <br/>
+                    <a href="/poll/{{poll.poll.uuid}}/results">This link</a>
+                    you can bookmark to go straight to the results page.
+                </p>
+            </div>
+            {{else}}
+            {{/if}}
             <div class="title">
                 <h2>{{poll.poll.title}}</h1>
             </div>
