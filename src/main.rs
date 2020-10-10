@@ -114,7 +114,7 @@ mod dao {
             let poll = sqlx::query_as!(
                 Poll,
                 "INSERT INTO polls (title, uuid) VALUES ($1, $2) RETURNING *",
-                req.title,
+                html_escape::encode_text(&req.title).into_owned(),
                 Uuid::new_v4()
             )
             .fetch_one(&mut tx)
@@ -134,7 +134,7 @@ mod dao {
                 let cin = sqlx::query!(
                     "INSERT INTO choices (poll_id, details) VALUES ($1, $2)",
                     poll.id,
-                    choice
+                    html_escape::encode_text(choice).into_owned()
                 )
                 .execute(&mut tx)
                 .await;
@@ -181,7 +181,7 @@ mod dao {
                     INSERT INTO votes (voter, choice_id, poll_id, dots)
                         VALUES ($1, $2, $3, $4)
                 ",
-                    voter,
+                    html_escape::encode_text(voter).into_owned(),
                     *choice,
                     self.id,
                     *dots
