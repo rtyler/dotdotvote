@@ -13,6 +13,12 @@ use handlebars::Handlebars;
 use log::*;
 use sqlx::PgPool;
 
+
+/// Maximum string length for putting stuff into the database, largely to stem abuse
+const MAX_STRING_LENGTH: usize = 1024;
+/// Maximum number of choices for a poll, largely to stem abuse
+const MAX_CHOICES: usize = 64;
+
 #[derive(Clone, Debug)]
 pub struct AppState<'a> {
     pub db: PgPool,
@@ -111,10 +117,13 @@ mod dao {
             db: &PgPool,
         ) -> Result<Poll, sqlx::Error> {
             let mut tx = db.begin().await?;
+            let mut title = html_escape::encode_text(&req.title).into_owned();
+            title.truncate(crate::MAX_STRING_LENGTH);
+
             let poll = sqlx::query_as!(
                 Poll,
                 "INSERT INTO polls (title, uuid) VALUES ($1, $2) RETURNING *",
-                html_escape::encode_text(&req.title).into_owned(),
+                title,
                 Uuid::new_v4()
             )
             .fetch_one(&mut tx)
@@ -125,16 +134,19 @@ mod dao {
              * There doesn't seem to be a cleaner way to do a multiple insert with sqlx
              * that doesn't involve some string manipulation
              */
-            for choice in req.choices.iter() {
+            for choice in req.choices[0..crate::MAX_CHOICES].iter() {
                 // Skip any empty choice
                 if choice.is_empty() {
                     continue;
                 }
 
+                let mut details = html_escape::encode_text(choice).into_owned();
+                details.truncate(crate::MAX_STRING_LENGTH);
+
                 let cin = sqlx::query!(
                     "INSERT INTO choices (poll_id, details) VALUES ($1, $2)",
                     poll.id,
-                    html_escape::encode_text(choice).into_owned()
+                    details
                 )
                 .execute(&mut tx)
                 .await;
@@ -176,12 +188,15 @@ mod dao {
                     continue;
                 }
 
+                let mut voter = html_escape::encode_text(voter).into_owned();
+                voter.truncate(crate::MAX_STRING_LENGTH);
+
                 sqlx::query!(
                     "
                     INSERT INTO votes (voter, choice_id, poll_id, dots)
                         VALUES ($1, $2, $3, $4)
                 ",
-                    html_escape::encode_text(voter).into_owned(),
+                    voter,
                     *choice,
                     self.id,
                     *dots
