@@ -554,6 +554,7 @@ async fn main() -> Result<(), tide::Error> {
 
     let db = PgPool::connect(&database_url).await?;
     let state = AppState::new(db);
+    state.register_templates().await;
     let mut app = tide::with_state(state);
 
     #[cfg(debug_assertions)]
