@@ -321,6 +321,16 @@ mod routes {
             )
             .fetch_all(db)
             .await?;
+
+            // TODO: move this logic elsewhere
+            // Default number of dots
+            let mut dots: f32 = 2.0;
+
+            // Only at eight choices does it make sense to tweak the dots
+            if choices.len() >= 8 {
+                dots = ((choices.len() as f32) * 0.33).round();
+            }
+
             let response = crate::msg::PollResponse { poll, choices };
 
             let mut body = req
@@ -329,7 +339,7 @@ mod routes {
                     "view_poll",
                     &json!({
                         "poll" : response,
-                        "dots" : 3,
+                        "dots" : dots,
                         "just_created" : qs.contains_key("created"),
                     }),
                 )
