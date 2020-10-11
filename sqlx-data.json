@@ -1,0 +1,228 @@
+{
+  "db": "PostgreSQL",
+  "1f9be35bd4c720d124b3d2174f9f18748800249f8a3973dccc32df955e420fad": {
+    "query": "SELECT choice_id, sum(dots) as dots, string_agg(voter, ', ') as voters FROM votes\n                    WHERE poll_id = $1 GROUP BY choice_id ORDER BY dots DESC;",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "choice_id",
+          "type_info": "Int4"
+        },
+        {
+          "ordinal": 1,
+          "name": "dots",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 2,
+          "name": "voters",
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      },
+      "nullable": [
+        false,
+        null,
+        null
+      ]
+    }
+  },
+  "20bb6dbf9395cf99b2235f9d2d1ebf6f2053a6a3a753d4e2364768210ff976db": {
+    "query": "SELECT * FROM polls WHERE uuid = $1",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Int4"
+        },
+        {
+          "ordinal": 1,
+          "name": "uuid",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 2,
+          "name": "title",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 3,
+          "name": "created_at",
+          "type_info": "Timestamptz"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "44050cba3d0573983660f97f9fc34f7da180e97958f380ca3b5824c78a03a393": {
+    "query": "SELECT * FROM choices WHERE poll_id = $1 ORDER by ID ASC",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Int4"
+        },
+        {
+          "ordinal": 1,
+          "name": "details",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 2,
+          "name": "poll_id",
+          "type_info": "Int4"
+        },
+        {
+          "ordinal": 3,
+          "name": "created_at",
+          "type_info": "Timestamptz"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "557bb0f82339ea60aad7ceac3a1a6d6078f2c311869a2ab429a46a55f7da8cae": {
+    "query": "\n                    INSERT INTO votes (voter, choice_id, poll_id, dots)\n                        VALUES ($1, $2, $3, $4)\n                ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Text",
+          "Int4",
+          "Int4",
+          "Int4"
+        ]
+      },
+      "nullable": []
+    }
+  },
+  "8a293042b94ac77cf44f8dc19ace2c6b36c6b70f04f36aab3f979a02bc105613": {
+    "query": "SELECT * FROM votes WHERE poll_id = $1",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Int4"
+        },
+        {
+          "ordinal": 1,
+          "name": "voter",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 2,
+          "name": "choice_id",
+          "type_info": "Int4"
+        },
+        {
+          "ordinal": 3,
+          "name": "poll_id",
+          "type_info": "Int4"
+        },
+        {
+          "ordinal": 4,
+          "name": "dots",
+          "type_info": "Int4"
+        },
+        {
+          "ordinal": 5,
+          "name": "created_at",
+          "type_info": "Timestamptz"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Int4"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "a533b5cef3bbe5dd4f58585251b2e2865fa4bcb510fc31508cd0e2cd76bc7575": {
+    "query": "INSERT INTO polls (title, uuid) VALUES ($1, $2) RETURNING *",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Int4"
+        },
+        {
+          "ordinal": 1,
+          "name": "uuid",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 2,
+          "name": "title",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 3,
+          "name": "created_at",
+          "type_info": "Timestamptz"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Text",
+          "Uuid"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "acc1b3ddf381110cb04626ce13c846169715e34e1400f94b0b9c7a49c7e3e88b": {
+    "query": "INSERT INTO choices (poll_id, details) VALUES ($1, $2)",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Int4",
+          "Text"
+        ]
+      },
+      "nullable": []
+    }
+  }
+}
