@@ -1,0 +1,7 @@
+= Dot dot vote Migrations
+
+This directory contains the database migrations for Dot dot vote. These are
+created with and managed by the
+link:https://github.com/launchbadge/sqlx/tree/master/sqlx-cli[sqlx-cli]. The
+tool is definitely beta software at the moment, and if you wish to work with
+these migrations, building the `sqlx` CLI from source is recommended.

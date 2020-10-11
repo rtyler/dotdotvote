@@ -1,0 +1,4 @@
+= Database seeds
+
+This directory contains `.sql` scripts which are loaded automatically into the
+`docker-compose.yml` database once it has been loaded.
