@@ -17,10 +17,10 @@ jobs:
       run: cargo fmt --all -- --check
 
     - name: Build
-      run: cargo build && (cd portal && cargo build)
+      run: cargo build
 
     - name: Run tests
-      run: cargo test && (cd portal && cargo test)
+      run: cargo test
 
     - uses: actions-rs/clippy-check@v1
       with:
