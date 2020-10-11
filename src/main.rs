@@ -591,6 +591,6 @@ async fn main() -> Result<(), tide::Error> {
     app.at("/api/v1/polls/:uuid/vote").post(routes::api::vote);
     app.at("/api/v1/polls/:uuid/results")
         .get(routes::api::results);
-    app.listen("127.0.0.1:8000").await?;
+    app.listen("0.0.0.0:8000").await?;
     Ok(())
 }
