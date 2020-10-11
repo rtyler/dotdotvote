@@ -10,6 +10,7 @@ RUN apt-get update && \
 
 # 1c: Build the exe using the actual source code
 COPY Cargo.toml .
+COPY sqlx-data.json .
 COPY src ./src
 RUN cargo build --release
 
@@ -19,7 +20,7 @@ COPY --from=builder /usr/ddv/target/release/dotdotvote .
 
 COPY apidocs ./apidocs
 COPY views ./views
-COPY assets ./static
+COPY static ./static
 
 RUN apt-get update && \
     apt-get dist-upgrade -y && \
