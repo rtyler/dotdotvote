@@ -13,7 +13,6 @@ use handlebars::Handlebars;
 use log::*;
 use sqlx::PgPool;
 
-
 /// Maximum string length for putting stuff into the database, largely to stem abuse
 const MAX_STRING_LENGTH: usize = 1024;
 /// Maximum number of choices for a poll, largely to stem abuse
