@@ -8,6 +8,7 @@ edition = "2018"
 async-std = { version = "~1.6.0", features = ["attributes"] }
 chrono = "0.4.15"
 dotenv = "~0.15.0"
+driftwood = "~0.0.3"
 handlebars = { version = "~3.4.0", features = ["dir_source"] }
 html-escape = "~0.2.6"
 log = "~0.4.8"

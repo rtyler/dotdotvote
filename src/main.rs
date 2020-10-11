@@ -582,8 +582,15 @@ async fn main() -> Result<(), tide::Error> {
     state.register_templates().await;
     let mut app = tide::with_state(state);
 
+    #[cfg(not(debug_assertions))]
+    {
+        info!("Activating RELEASE mode configuration");
+        app.with(driftwood::ApacheCombinedLogger);
+    }
+
     #[cfg(debug_assertions)]
     {
+        info!("Activating DEBUG mode configuration");
         info!("Enabling a very liberal CORS policy for debug purposes");
         use tide::security::{CorsMiddleware, Origin};
         let cors = CorsMiddleware::new()
