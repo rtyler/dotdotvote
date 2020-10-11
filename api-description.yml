@@ -2,7 +2,8 @@
 openapi: "3.0.0"
 info:
   description: |
-    Dot dot vote!
+    Dot dot vote! This OpenAPI definition may become inaccurate as the application
+    evolves. Until such a point where this spec is used for automated acceptance
   version: "1.0.0"
   title: Dot dot vote
   contact:
@@ -11,6 +12,8 @@ info:
     name: "LGPL v3.0"
     url: "https://www.gnu.org/licenses/lgpl-3.0.en.html"
 servers:
+  - url: 'https://www.dotdotvote.com/api/v1'
+    description: Production/public environment
   - url: 'http://localhost:8000/api/v1'
     description: Local dev server (APIv1)
 
@@ -46,7 +49,7 @@ paths:
                   poll:
                     type: string
                     description: 'A UUID for the generated poll'
-                    example: '8497479a-9f07-4530-9a5c-2824238d5975'
+                    example: 'e2b75a74-0dd9-4324-bc7e-4b1aa720f2f1'
         "422":
           description: |
             Invalid JSON supplied
@@ -64,10 +67,11 @@ paths:
       - in: path
         name: uuid
         required: true
+        description: 'The UUID for the generated poll'
+        example: 'e2b75a74-0dd9-4324-bc7e-4b1aa720f2f1'
         schema:
           type: string
           format: uuid
-          example: '8497479a-9f07-4530-9a5c-2824238d5975'
 
       responses:
         200:
@@ -92,10 +96,11 @@ paths:
       - in: path
         name: uuid
         required: true
+        description: 'The UUID for the generated poll'
+        example: 'e2b75a74-0dd9-4324-bc7e-4b1aa720f2f1'
         schema:
           type: string
           format: uuid
-          example: '8497479a-9f07-4530-9a5c-2824238d5975'
       responses:
         200:
           description: Vote submitted
@@ -115,6 +120,8 @@ paths:
       - in: path
         name: uuid
         required: true
+        description: 'The UUID for the generated poll'
+        example: 'e2b75a74-0dd9-4324-bc7e-4b1aa720f2f1'
         schema:
           type: string
           format: uuid
