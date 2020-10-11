@@ -1,4 +1,4 @@
-= Dot-dot Vote!
+= Dot dot Vote!
 
 This is a simple web application for
 link:https://en.wikipedia.org/wiki/Dot-voting[Dot-voting].
@@ -9,6 +9,21 @@ people to create quick polls to run with their teams.
 
 
 == Hacking
+
+Since this is a Rust project, Rust and Cargo are both required in order to
+build and test.
+
+* `RUST_LOG=info cargo run` will build and run the application locally. After
+  which link:http://localhost:8000/[localhost:8000] will have the application
+  up and running.
+* `cargo test` will run the tests, of which there are very few at the moment!
+
+The application is built with link:https://github.com/http-rs/tide[Tide] for
+the web tier and link:https://github.com/launchbadge/sqlx[sqlx] for the
+database tier.
+
+The views are all very simple HTML and a little bit of JavaScript written with
+link:https://github.com/sunng87/handlebars-rust[Handlebars]
 
 In order to experiment with the API, execute `cargo run` and then access
 link:http://localhost:8000/apidocs/index.html[localhost:8000/apidocs/index.html]
