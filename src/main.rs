@@ -133,7 +133,7 @@ mod dao {
              * There doesn't seem to be a cleaner way to do a multiple insert with sqlx
              * that doesn't involve some string manipulation
              */
-            for choice in req.choices[0..crate::MAX_CHOICES].iter() {
+            for choice in req.choices.iter().take(crate::MAX_CHOICES) {
                 // Skip any empty choice
                 if choice.is_empty() {
                     continue;
