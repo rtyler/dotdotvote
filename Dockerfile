@@ -10,6 +10,7 @@ RUN apt-get update && \
 
 # 1c: Build the exe using the actual source code
 COPY Cargo.toml .
+COPY Cargo.lock .
 COPY sqlx-data.json .
 COPY src ./src
 RUN cargo build --release
