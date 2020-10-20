@@ -585,6 +585,18 @@ async fn main() -> Result<(), tide::Error> {
     {
         info!("Activating RELEASE mode configuration");
         app.with(driftwood::ApacheCombinedLogger);
+
+        use tide::security::{CorsMiddleware, Origin};
+        let cors = CorsMiddleware::new()
+            .allow_methods(
+                "GET, POST, PUT, OPTIONS"
+                    .parse::<tide::http::headers::HeaderValue>()
+                    .unwrap(),
+            )
+            .allow_origin(Origin::from("https://shaunbennett.github.io"))
+            .allow_credentials(false);
+
+        app.with(cors);
     }
 
     #[cfg(debug_assertions)]
